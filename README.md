@@ -1,20 +1,22 @@
 # SVG AI Agent
 
-Turn a text prompt into a clean SVG, with a live preview in the browser.
+Turn a text prompt into a clean SVG, with a browser preview and conversation sidebar.
 
-## Current status
+## Current behavior
 
-The Next.js starter and server-only model configuration are in place. SVG
-generation, validation, and the live preview are the next implementation steps;
-the home page currently shows the starter screen.
+Sending a chat message makes `POST /api/generate` with the user/assistant history
+and, for edits, the current validated SVG. The server makes one bounded model call,
+streams progress events, validates the finished SVG, and returns artwork plus a
+short assistant reply. The canvas shows the last valid artwork while generation
+runs, and updates only when the result passes validation. Preview, code, zoom,
+and download use that same SVG. Failed requests show an error and a retry button.
+Starting a new conversation cancels the active request and clears history/artwork.
+History is in browser memory and resets on reload. The initial artwork is a sample.
 
-## Stack
-
-- Next.js App Router, React, and TypeScript
-- Tailwind CSS
-- Vercel AI SDK (`ai`) and its OpenAI provider (`@ai-sdk/openai`)
-- Zod for configuration, and planned request/result validation
-- Vercel for the first deployment
+Streaming currently reports progress, **not partially rendered artwork or streamed
+assistant text**. Safe progressive SVG snapshots remain a separate future step.
+There are no tools, automatic repair attempts, or agent loops. One model call
+responds to each submission; manual retry starts another bounded call.
 
 ## Local setup
 
@@ -25,80 +27,134 @@ npm ci
 cp .env.example .env.local
 ```
 
-Open `.env.local` locally and set `OPENAI_API_KEY`. Do not paste the key into chat
-or commit it. `.env.local` is ignored by Git; `.env.example` contains only placeholders.
-
-`OPENAI_MODEL` defaults to `gpt-4.1-mini` when omitted. This is an initial low-cost
-testing choice, not yet evaluated for SVG quality. It supports streaming through
-the Responses API. At setup time (October 6, 2026), standard text pricing is $0.40
-per million input tokens and $1.60 per million output tokens. See the
-[official model documentation](https://developers.openai.com/api/docs/models/gpt-4.1-mini)
-for current pricing, capabilities, and account rate limits.
+Set `OPENAI_API_KEY` in `.env.local` locally. Never paste it into chat, expose it
+with `NEXT_PUBLIC_`, or commit it. `OPENAI_MODEL` is optional and defaults to
+`gpt-4.1-mini`. Restart the dev server after changing environment settings.
 
 ```bash
 npm run dev
 ```
 
-Open [localhost:3000](http://localhost:3000). Restart the dev server after changing
-environment settings.
+Open [localhost:3000](http://localhost:3000).
 
-## Structure and intended flow
+The default is an initial low-cost choice, not evaluated for visual fidelity.
+The [official GPT-4.1 mini documentation](https://developers.openai.com/api/docs/models/gpt-4.1-mini)
+lists Responses API and structured output support, with standard pricing of
+$0.40 per million input tokens and $1.60 per million output tokens at the October
+6, 2026 documentation check. Actual account access and billing remain unverified.
+The server uses the [AI SDK OpenAI provider](https://ai-sdk.dev/providers/ai-sdk-providers/openai),
+[`streamText`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text), and
+[`Output.object`](https://ai-sdk.dev/docs/reference/ai-sdk-core/output).
+Provider response storage is disabled with `store: false`.
 
-- `app/page.tsx`: main page, currently the starter.
-- `app/layout.tsx`: shared layout, fonts, and metadata.
-- `app/globals.css`: global styles.
-- `lib/ai/model.ts`: validates server configuration using Zod and creates the model
-  through the OpenAI provider. The `server-only` import prevents client imports.
-- `.env.example`: documented environment settings, without a real key.
-- `AGENTS.md`: project conventions and incremental roadmap.
+## Project structure
 
-The planned flow is:
+The structure follows Next.js's documented "Store project files outside of app"
+strategy. `app/` contains routes/layout; reusable UI lives in `components/`, and
+shared contracts and helpers live in `lib/`. The page/header remain Server
+Components; interactive components use `use client`.
+
+- `app/page.tsx`, `app/layout.tsx`, `app/globals.css`: composition, metadata, styles.
+- `app/api/generate/route.ts`: Node.js Route Handler for generation requests.
+- `components/ui/`: reusable buttons and icons.
+- `components/workspace/`: canvas, chat, messages, composer, and request coordination.
+- `lib/workspace/contracts.ts`: shared Zod request/response schemas and limits.
+- `lib/workspace/generate-client.ts`: fetch and incremental NDJSON response reader.
+- `lib/workspace/types.ts`, `sample.ts`: inferred UI types and authored sample.
+- `lib/ai/model.ts`: server-only environment validation and model configuration.
+- `lib/ai/generate-svg.ts`: server-only instructions and bounded SDK streaming call.
+- `lib/ai/handle-generation.ts`: request validation, streaming transport, result
+  validation, safe errors, cancellation. Model injection allows mocked tests.
+- `lib/svg/validate-svg.ts`: strict XML parsing with `saxes` and Zod transformation.
+- `tests/`: mocked request, SDK, stream-client, and SVG safety tests.
 
 ```text
-Browser prompt form
-  → Next.js POST /api/generate
-  → server-only OpenAI model call
-  → streamed output with Zod validation and SVG safety checks
-  → client-side SVG preview and validated download
+ChatComposer → SvgWorkspace → POST /api/generate
+  → Zod request validation + current SVG validation
+  → server-only model call with server-owned instructions
+  → progress events → XML validation + result schema
+  → result event → assistant history + SVG image preview/download
 ```
 
-The endpoint and client components have not been implemented yet. The browser will
-call the Next.js endpoint; only the server will access `OPENAI_API_KEY`. Never
-prefix this key with `NEXT_PUBLIC_` or return it to the browser.
+Example request (UI-only message IDs and the welcome message are excluded):
 
-Zod will validate input and result contracts. SVG markup also needs parsing and
-safety checks integrated into those schemas. Streaming may split tags across
-chunks, so progressive preview will require valid, sanitized snapshots rather
-than rendering each raw chunk.
+```json
+{
+  "messages": [
+    { "role": "user", "content": "Draw a mountain" },
+    { "role": "assistant", "content": "Created a mountain illustration." },
+    { "role": "user", "content": "Add a sun" }
+  ],
+  "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">...</svg>"
+}
+```
 
-## Checks
+The response is newline-delimited JSON (`application/x-ndjson`) with `progress`,
+`result`, or `error` events. A result contains `message` and a `document` with
+`name`, `description`, `source`, `width`, and `height`. Request errors return JSON
+with an HTTP 400/413/415 status; errors after streaming starts are stream events.
+
+## Trust and usage limits
+
+Client history is editable, including forged assistant messages. It is context,
+not proof of prior actions or authorization. The server accepts only user/assistant
+roles, rejects additional fields, and owns the system instructions. Zod checks
+structure, not truthfulness or immunity to prompt injection. Future server-owned
+history would require authentication and conversation ownership checks.
+
+- At most 20 messages, 2000 characters per message, 16000 total history characters.
+- Request and response bodies capped at 96000 bytes; SVG strings at 48000 characters.
+- One model call, no SDK retries, at most 8000 output tokens, 60-second generation
+  timeout, and cancellation when the client disconnects. The browser times out
+  at 70 seconds. Conversation limits ask the user to start a new conversation.
+- Strict SVG element/attribute allowlists; positive `viewBox` dimensions up to
+  4096; at most 1000 elements and nesting depth 32. Disallowed content causes the
+  entire SVG to be rejected rather than silently altered.
+- No scripts, event handlers, `foreignObject`, images, styles, hrefs, external
+  URLs, namespace changes, DOCTYPE, XML declarations, or processing instructions.
+  Gradients/masks/clips may refer only to local IDs using `url(#id)`.
+
+The XML parser inspects structure and decoded attributes; regex is used only for
+individual value restrictions. SVG validation is integrated into Zod transforms.
+The image preview uses an SVG Blob URL, never `dangerouslySetInnerHTML`. Preview
+and download share the same URL, revoked on replacement and unmount. The client
+validates the server response contract; the authoritative SVG safety check runs
+on the server. Unsupported SVG features intentionally fail validation.
+
+## Verification
 
 ```bash
+npm test
 npm run lint
-npx tsc --noEmit
 npm run build
 ```
 
-The starter uses `next/font/google` for Geist fonts. A production build needs
-network access to Google Fonts; an offline environment can fail at that step.
-No API key is required to build the app. Model configuration is checked when
-`getLLM()` is called, and creating a model instance does not make an API call.
+Automated tests use mocked model responses and never spend API credits. They cover
+payload limits/roles, history forwarding, SDK structured output and token limits,
+malformed XML, executable/external content, safe local gradients, redacted errors,
+timeouts/cancellation, and NDJSON records split across UTF-8 chunks.
 
-In a restricted environment where Turbopack cannot open its local CSS processing
-port, `npm run build -- --webpack` is an alternative. Setup verification passed
-lint, TypeScript, and the Webpack production build; the default Turbopack build
-could not complete in this environment.
+Browser checks covered loading, disabled sending during generation, successful
+canvas/chat updates using a temporary mock, invalid output retaining the last
+valid artwork, and the real endpoint's missing-configuration error. The temporary
+mock is removed from the final route. No live OpenAI generation was verified during these browser checks:
+a local API key was not configured at that time. The in-app browser's download-event wait timed
+out during the earlier UI check; a saved download file remains unverified.
 
-The setup audit reported five high-severity entries in the existing development
-lint tooling chain, originating from `braces` via `micromatch` and `fast-glob`.
-These need a focused dependency review. Do not use `npm audit fix --force` blindly:
-its proposed fix at setup time downgrades `eslint-config-next` to version 14.
+The existing Google Fonts setup requires network access during production builds.
+In restricted environments, the build may need permission for network/processing
+ports, or `npm run build -- --webpack` as a fallback. The existing lint tooling
+chain still has five high-severity audit entries; review them separately rather
+than running `npm audit fix --force` and accepting a framework lint downgrade.
 
-## Vercel deployment
+## Deployment and next steps
 
-When generation and preview are ready, configure `OPENAI_API_KEY` and optionally
-`OPENAI_MODEL` in the project's Vercel environment settings. Keep the key server
-side and configure the environments where generation should be available.
-Request/cost protection is still required before opening the generator publicly.
+No deployment has been verified. Before public Vercel access, configure the server
+secrets and add authentication or appropriate request/rate/cost protection. Current
+bounds constrain individual requests; they do not enforce per-user quotas across
+requests or server instances. The route requests a 65-second platform duration;
+availability depends on the deployment plan.
 
-No deployment or live OpenAI request has been verified yet.
+Next steps: verify a live model response, evaluate fixed prompts for fidelity,
+latency and cost, then prototype validated progressive SVG snapshots. A bounded
+repair loop can follow if invalid output proves a concrete recurring problem.

@@ -2,6 +2,7 @@ import "server-only";
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
+import { ModelConfigurationError } from "./errors";
 
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),
@@ -17,9 +18,7 @@ export function getLLM() {
 
   if (!result.success) {
     // Do not include environment values in errors or logs.
-    throw new Error(
-      "Set OPENAI_API_KEY in the server environment. OPENAI_MODEL must be non-empty when provided.",
-    );
+    throw new ModelConfigurationError();
   }
 
   const openai = createOpenAI({ apiKey: result.data.OPENAI_API_KEY });

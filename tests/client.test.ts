@@ -1,0 +1,82 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { requestGeneration } from "../lib/workspace/generate-client";
+import type { GenerationEvent } from "../lib/workspace/contracts";
+
+const result: GenerationEvent = {
+  type: "result",
+  message: "Created a café icon.",
+  document: {
+    name: "cafe.svg",
+    description: "Café",
+    width: 100,
+    height: 100,
+    source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"/>',
+  },
+};
+const input = { messages: [{ role: "user" as const, content: "Draw a café" }] };
+
+test("client sends messages and decodes JSON records split across UTF-8 chunks", async (t) => {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({ type: "progress", characters: 0 }) +
+      "\n" +
+      JSON.stringify(result) +
+      "\n",
+  );
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (url: string, options: RequestInit) => {
+      assert.equal(url, "/api/generate");
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body as string), input);
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const byte of bytes)
+              controller.enqueue(new Uint8Array([byte]));
+            controller.close();
+          },
+        }),
+        { headers: { "Content-Type": "application/x-ndjson" } },
+      );
+    },
+  );
+  const events: GenerationEvent[] = [];
+  await requestGeneration(input, new AbortController().signal, (event) =>
+    events.push(event),
+  );
+  assert.deepEqual(events, [{ type: "progress", characters: 0 }, result]);
+});
+
+for (const [name, response, pattern] of [
+  [
+    "HTTP error",
+    () => Response.json({ error: "Invalid conversation" }, { status: 400 }),
+    /Invalid conversation/,
+  ],
+  [
+    "stream error",
+    () =>
+      new Response('{"type":"error","message":"Unsafe SVG"}\n', {
+        headers: { "Content-Type": "application/x-ndjson" },
+      }),
+    /Unsafe SVG/,
+  ],
+  [
+    "incomplete stream",
+    () =>
+      new Response('{"type":"progress","characters":20}\n', {
+        headers: { "Content-Type": "application/x-ndjson" },
+      }),
+    /ended before/,
+  ],
+] as const) {
+  test(`client reports ${name}`, async (t) => {
+    t.mock.method(globalThis, "fetch", async () => response());
+    await assert.rejects(
+      () => requestGeneration(input, new AbortController().signal, () => {}),
+      pattern,
+    );
+  });
+}
