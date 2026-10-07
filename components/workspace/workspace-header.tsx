@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/icon";
+import { UserButton } from "@clerk/nextjs";
 
 export function WorkspaceHeader() {
   return (
@@ -19,9 +20,12 @@ export function WorkspaceHeader() {
           </p>
         </div>
       </div>
-      <span className="hidden rounded-full border border-stone-200 px-3 py-1.5 text-xs text-stone-500 sm:block">
-        Your creative workspace
-      </span>
+      <div className="flex items-center gap-4">
+        <span className="hidden rounded-full border border-stone-200 px-3 py-1.5 text-xs text-stone-500 sm:block">
+          Your creative workspace
+        </span>
+        <UserButton />
+      </div>
     </header>
   );
 }

@@ -18,6 +18,25 @@ assistant text**. Safe progressive SVG snapshots remain a separate future step.
 There are no tools, automatic repair attempts, or agent loops. One model call
 responds to each submission; manual retry starts another bounded call.
 
+## Authentication
+
+Clerk manages sessions and accounts; no application database is needed. The
+workspace checks `await auth.protect()` on the server, and `/api/generate` checks
+`await auth()` before starting generation, returning JSON with HTTP 401 when
+unauthenticated. `proxy.ts` initializes Clerk for pages, API routes, and `/__clerk`.
+Protect future private routes at the resource too; proxy alone does not restrict access.
+
+Public routes are `/sign-in`, `/sign-up` (invitation acceptance), and
+`/request-access`. The request page uses Clerk’s built-in Waitlist component.
+Configure **Waitlist** in Clerk Dashboard → Access mode; a request grants no
+access until an admin approves it and the visitor accepts the emailed invitation.
+Existing users retain access. Approve requests in the Clerk Dashboard waitlist.
+The workspace header includes a profile/sign-out button.
+
+The connected development instance was verified to have email/password, Google,
+and GitHub enabled with Waitlist mode. These settings live in Clerk, not Git.
+Keep Email enabled for verification and invitation delivery.
+
 ## Local setup
 
 Use Node.js 22 LTS and npm.
@@ -27,8 +46,11 @@ npm ci
 cp .env.example .env.local
 ```
 
-Set `OPENAI_API_KEY` in `.env.local` locally. Never paste it into chat, expose it
-with `NEXT_PUBLIC_`, or commit it. `OPENAI_MODEL` is optional and defaults to
+Set `OPENAI_API_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY`
+in `.env.local` locally. Retrieve the Clerk keys from your application’s dashboard
+or run `clerk auth login` then `clerk init --app <your-app-id>`. Never paste secret
+keys into chat, expose them with `NEXT_PUBLIC_`, or commit them. Only Clerk’s
+publishable key belongs in `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. `OPENAI_MODEL` is optional and defaults to
 `gpt-4.1-mini`. Restart the dev server after changing environment settings.
 
 ```bash
@@ -134,7 +156,17 @@ payload limits/roles, history forwarding, SDK structured output and token limits
 malformed XML, executable/external content, safe local gradients, redacted errors,
 timeouts/cancellation, and NDJSON records split across UTF-8 chunks.
 
-Browser checks covered loading, disabled sending during generation, successful
+Clerk browser checks verified a logged-out `/` visit redirects to sign-in, the
+request-access form renders and rejects an empty email, and uninvited `/sign-up`
+shows Access restricted. An unauthenticated `POST /api/generate` returned HTTP 401
+with a sign-in error. No account was created and invitation delivery, successful
+email/social login, and logout were not verified by the agent. The user subsequently
+confirmed that authentication works locally. Clerk doctor confirmed
+the linked development application and keys; production is not configured.
+Lint and all 37 existing mocked tests passed. The default Turbopack build could not
+bind its processing port in this environment; `npm run build -- --webpack` passed.
+
+Earlier generation browser checks covered loading, disabled sending during generation, successful
 canvas/chat updates using a temporary mock, invalid output retaining the last
 valid artwork, and the real endpoint's missing-configuration error. The temporary
 mock is removed from the final route. No live OpenAI generation was verified during these browser checks:
@@ -150,7 +182,11 @@ than running `npm audit fix --force` and accepting a framework lint downgrade.
 ## Deployment and next steps
 
 No deployment has been verified. Before public Vercel access, configure the server
-secrets and add authentication or appropriate request/rate/cost protection. Current
+secrets (including production Clerk keys), configure the production Clerk domain,
+and enable email/password, social connections, and Waitlist mode there too.
+Production social login needs your own provider OAuth credentials. Check login,
+invitation acceptance, logout, and unauthorized API requests on the deployed domain.
+Add request/rate/cost protection before public access. Current
 bounds constrain individual requests; they do not enforce per-user quotas across
 requests or server instances. The route requests a 65-second platform duration;
 availability depends on the deployment plan.
