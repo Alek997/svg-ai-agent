@@ -46,6 +46,16 @@ export const svgDocumentSchema = z
   })
   .strict();
 
+export const generationUsageSchema = z.object({
+  model: z.string().min(1).max(200),
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable(),
+  cachedInputTokens: z.number().int().nonnegative().nullable(),
+  totalTokens: z.number().int().nonnegative().nullable(),
+}).strict();
+
+export type GenerationUsage = z.infer<typeof generationUsageSchema>;
+
 export const generationEventSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -58,6 +68,7 @@ export const generationEventSchema = z.discriminatedUnion("type", [
       type: z.literal("result"),
       message: z.string().trim().min(1).max(2000),
       document: svgDocumentSchema,
+      usage: generationUsageSchema,
     })
     .strict(),
   z

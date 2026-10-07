@@ -25,3 +25,9 @@ export function getLLM() {
 
   return openai.responses(result.data.OPENAI_MODEL);
 }
+
+// The header needs only the public model name, never API credentials.
+export function getConfiguredModelName() {
+  const result = environmentSchema.shape.OPENAI_MODEL.safeParse(process.env.OPENAI_MODEL);
+  return result.success ? result.data : "Unavailable";
+}

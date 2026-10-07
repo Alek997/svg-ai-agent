@@ -5,6 +5,7 @@ import type { GenerationEvent } from "../lib/workspace/contracts";
 
 const result: GenerationEvent = {
   type: "result",
+  usage: { model: "gpt-4.1-mini", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 },
   message: "Created a café icon.",
   document: {
     name: "cafe.svg",

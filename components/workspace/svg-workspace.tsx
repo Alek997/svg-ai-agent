@@ -51,6 +51,7 @@ export function SvgWorkspace() {
               id: crypto.randomUUID(),
               role: "assistant",
               content: event.message,
+              usage: event.usage,
             },
           ]);
           setRetryInput(null);

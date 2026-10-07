@@ -9,14 +9,25 @@ and, for edits, the current validated SVG. The server makes one bounded model ca
 streams progress events, validates the finished SVG, and returns artwork plus a
 short assistant reply. The canvas shows the last valid artwork while generation
 runs, and updates only when the result passes validation. Preview, code, zoom,
-and download use that same SVG. Failed requests show an error and a retry button.
+and download use that same SVG. Each SVG's Code view includes a Copy code button
+that copies the displayed source, confirms success, and reports clipboard failures.
+Successful assistant replies display provider-reported total, input, and output
+tokens, plus cached input when reported. These counts cover the whole request,
+including conversation history and current artwork; cached input is already part
+of the input count. Missing usage shows Unknown. No dollar cost is calculated,
+and failed requests are not included in these per-reply counts. The header shows
+the configured model as a read-only label, including before the first generation.
+Failed requests show an error and a retry button.
 Starting a new conversation cancels the active request and clears history/artwork.
 History is in browser memory and resets on reload. The initial artwork is a sample.
 
 Streaming currently reports progress, **not partially rendered artwork or streamed
 assistant text**. Safe progressive SVG snapshots remain a separate future step.
-There are no tools, automatic repair attempts, or agent loops. One model call
-responds to each submission; manual retry starts another bounded call.
+Generation uses a reusable AI SDK `ToolLoopAgent`, explicitly limited to one step
+with `isStepCount(1)`. It currently has no tools or automatic repair attempts.
+The agent abstraction centralizes configuration; iterative tool use and feedback
+would require adding tools and deliberately increasing the step budget. One model
+call responds to each submission; manual retry starts another bounded call.
 
 ## Authentication
 
@@ -65,7 +76,7 @@ lists Responses API and structured output support, with standard pricing of
 $0.40 per million input tokens and $1.60 per million output tokens at the October
 6, 2026 documentation check. Actual account access and billing remain unverified.
 The server uses the [AI SDK OpenAI provider](https://ai-sdk.dev/providers/ai-sdk-providers/openai),
-[`streamText`](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text), and
+[`ToolLoopAgent`](https://ai-sdk.dev/docs/reference/ai-sdk-core/tool-loop-agent), and
 [`Output.object`](https://ai-sdk.dev/docs/reference/ai-sdk-core/output).
 Provider response storage is disabled with `store: false`.
 
@@ -84,7 +95,11 @@ Components; interactive components use `use client`.
 - `lib/workspace/generate-client.ts`: fetch and incremental NDJSON response reader.
 - `lib/workspace/types.ts`, `sample.ts`: inferred UI types and authored sample.
 - `lib/ai/model.ts`: server-only environment validation and model configuration.
-- `lib/ai/generate-svg.ts`: server-only instructions and bounded SDK streaming call.
+- `lib/ai/svg-agent.ts`: server-only reusable agent factory, instructions, model
+  output schema, one-step/token/retry limits, and conversation preparation.
+- `lib/ai/usage.ts`: converts SDK token usage to explicit, nullable UI counts.
+- `lib/ai/generate-svg.ts`: streams the agent output with throttled progress and
+  a character limit for the HTTP generation flow.
 - `lib/ai/handle-generation.ts`: request validation, streaming transport, result
   validation, safe errors, cancellation. Model injection allows mocked tests.
 - `lib/svg/validate-svg.ts`: strict XML parsing with `saxes` and Zod transformation.
@@ -93,7 +108,7 @@ Components; interactive components use `use client`.
 ```text
 ChatComposer → SvgWorkspace → POST /api/generate
   → Zod request validation + current SVG validation
-  → server-only model call with server-owned instructions
+  → server-only ToolLoopAgent with server-owned instructions (one step)
   → progress events → XML validation + result schema
   → result event → assistant history + SVG image preview/download
 ```
@@ -113,8 +128,42 @@ Example request (UI-only message IDs and the welcome message are excluded):
 
 The response is newline-delimited JSON (`application/x-ndjson`) with `progress`,
 `result`, or `error` events. A result contains `message` and a `document` with
-`name`, `description`, `source`, `width`, and `height`. Request errors return JSON
+`name`, `description`, `source`, `width`, and `height`, plus server-supplied `usage`
+with model and token counts. Usage is separate from model-generated output and is
+not forwarded in conversation history. Request errors return JSON
 with an HTTP 400/413/415 status; errors after streaming starts are stream events.
+
+### Reusing the agent in server code and eval runners
+
+`createSvgAgent()` builds the configured agent lazily, so importing the module
+does not read credentials. Pass a model to `createSvgAgent(model)` to use a mock
+or an alternative model with the same instructions, output schema, and limits.
+`buildSvgMessages(input)` prepares history and inserts current artwork as
+untrusted user context without changing the input.
+
+```ts
+import { buildSvgMessages, createSvgAgent } from "@/lib/ai/svg-agent";
+import { generationRequestSchema } from "@/lib/workspace/contracts";
+import { safeSvgSchema } from "@/lib/svg/validate-svg";
+
+const input = generationRequestSchema.parse({
+  messages: [{ role: "user", content: "Draw a blue circle" }],
+});
+const agent = createSvgAgent();
+const result = await agent.generate({ messages: buildSvgMessages(input) });
+const validatedSvg = safeSvgSchema.parse(result.output.svg);
+// result.output contains message, filename, and svg.
+// result.totalUsage and result.steps are available for eval measurements.
+```
+
+Use `await agent.stream(...)` for streaming or `await agent.generate(...)` for
+a complete result. Structured model output is not SVG safety validation: the
+HTTP handler still validates the complete result, while other consumers must
+validate inputs and SVG themselves before rendering. Both agent methods have a
+60-second timeout, an 8000-token cap, and zero retries. The HTTP streaming adapter
+additionally enforces its 64000-character cap and request cancellation.
+Standalone Node runners need `--conditions=react-server` to import `server-only`
+modules (as in `npm test`), plus alias resolution if using `@/` imports.
 
 ## Trust and usage limits
 
@@ -144,6 +193,11 @@ validates the server response contract; the authoritative SVG safety check runs
 on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
+
+Token reporting and the read-only model label were checked in the Codex browser
+using a temporary mocked generation response; the real route was restored after
+verification. All 43 mocked tests, lint, TypeScript, and the webpack production
+build passed. No live provider usage or billing was verified in this check.
 
 ```bash
 npm test

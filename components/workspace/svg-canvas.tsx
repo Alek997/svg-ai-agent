@@ -16,8 +16,31 @@ export function SvgCanvas({
 }) {
   const [view, setView] = useState<"preview" | "source">("preview");
   const [zoom, setZoom] = useState(100);
+  const [copyFeedback, setCopyFeedback] = useState<{
+    source: string;
+    status: "copied" | "error";
+  } | null>(null);
+  const copyStatus = copyFeedback?.source === document.source
+    ? copyFeedback.status
+    : null;
   const image = useRef<HTMLImageElement>(null);
   const download = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (copyFeedback?.status !== "copied") return;
+    const timeout = setTimeout(() => setCopyFeedback(null), 2000);
+    return () => clearTimeout(timeout);
+  }, [copyFeedback]);
+
+  async function copySource() {
+    const source = document.source;
+    try {
+      await navigator.clipboard.writeText(source);
+      setCopyFeedback({ source, status: "copied" });
+    } catch {
+      setCopyFeedback({ source, status: "error" });
+    }
+  }
+
   useEffect(() => {
     const objectUrl = URL.createObjectURL(
       new Blob([document.source], { type: "image/svg+xml" }),
@@ -103,12 +126,28 @@ export function SvgCanvas({
             </p>
           </>
         ) : (
-          <pre
-            aria-label="SVG source"
-            className="max-h-[60vh] w-full overflow-auto rounded-xl border border-stone-200 bg-white p-6 text-xs leading-7 text-stone-600"
-          >
-            <code>{document.source}</code>
-          </pre>
+          <div className="w-full overflow-hidden rounded-xl border border-stone-200 bg-white">
+            <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2">
+              <span className="text-xs text-stone-500">SVG source</span>
+              <Button variant="ghost" onClick={copySource} aria-label="Copy SVG code">
+                <Icon name="copy" width={14} height={14} />
+                {copyStatus === "copied" ? "Copied!" : "Copy code"}
+              </Button>
+            </div>
+            <p role="status" className={copyStatus === "error" ? "px-4 pt-3 text-xs text-red-600" : "sr-only"}>
+              {copyStatus === "copied"
+                ? "SVG code copied to clipboard."
+                : copyStatus === "error"
+                  ? "Could not copy. Try again or select the code and copy it manually."
+                  : ""}
+            </p>
+            <pre
+              aria-label="SVG source"
+              className="max-h-[60vh] w-full overflow-auto p-6 text-xs leading-7 text-stone-600"
+            >
+              <code>{document.source}</code>
+            </pre>
+          </div>
         )}
         <div className="mt-7 flex items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-xs">
           <Button

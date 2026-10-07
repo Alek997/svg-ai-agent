@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/icon";
 import { UserButton } from "@clerk/nextjs";
+import { getConfiguredModelName } from "@/lib/ai/model";
 
 export function WorkspaceHeader() {
   return (
@@ -16,7 +17,7 @@ export function WorkspaceHeader() {
             </span>
           </h1>
           <p className="mt-0.5 text-xs text-stone-500">
-            Small ideas. Infinite possibilities.
+            Model: <span className="font-medium text-stone-600">{getConfiguredModelName()}</span>
           </p>
         </div>
       </div>

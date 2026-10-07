@@ -2,10 +2,12 @@ import { z } from "zod";
 import { ModelConfigurationError } from "./errors";
 import {
   generationRequestSchema,
+  generationUsageSchema,
   MAX_REQUEST_BYTES,
   MAX_RESPONSE_BYTES,
   type GenerationRequest,
   type GenerationEvent,
+  type GenerationUsage,
 } from "../workspace/contracts";
 import { safeSvgSchema } from "../svg/validate-svg";
 
@@ -21,7 +23,7 @@ export type GenerateSvg = (
   input: GenerationRequest,
   signal: AbortSignal,
   onProgress: (characters: number) => void,
-) => Promise<unknown>;
+) => Promise<{ output: unknown; usage: GenerationUsage }>;
 
 class RequestError extends Error {
   constructor(
@@ -129,7 +131,7 @@ export async function handleGeneration(
           send({ type: "progress", characters }),
         );
         if (signal.aborted) throw new Error("Aborted");
-        const result = resultSchema.safeParse(raw);
+        const result = resultSchema.safeParse(raw.output);
         if (!result.success) {
           send({
             type: "error",
@@ -140,6 +142,7 @@ export async function handleGeneration(
           send({
             type: "result",
             message: result.data.message,
+            usage: generationUsageSchema.parse(raw.usage),
             document: {
               name: result.data.filename,
               description: result.data.message.slice(0, 1000),

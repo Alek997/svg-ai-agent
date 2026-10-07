@@ -23,6 +23,19 @@ export function ChatMessage({ message }: { message: Message }) {
         <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-stone-600">
           {message.content}
         </p>
+        {isAssistant && message.usage && (
+          <div className="mt-2 text-[11px] leading-5 text-stone-400">
+            <p title="Token usage for this request, including conversation history and current artwork. Cached input is included in the input count.">
+              {message.usage.totalTokens?.toLocaleString("en-US") ?? "Unknown"} tokens
+              {" · "}
+              {message.usage.inputTokens?.toLocaleString("en-US") ?? "Unknown"} input
+              {" · "}
+              {message.usage.outputTokens?.toLocaleString("en-US") ?? "Unknown"} output tokens
+              {message.usage.cachedInputTokens !== null && message.usage.cachedInputTokens > 0 &&
+                ` · ${message.usage.cachedInputTokens.toLocaleString("en-US")} input cached`}
+            </p>
+          </div>
+        )}
       </div>
     </article>
   );

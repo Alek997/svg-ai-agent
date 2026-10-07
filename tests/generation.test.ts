@@ -19,11 +19,14 @@ const request = (body: unknown) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-const validOutput = {
+const artwork = {
   message: "Created a blue circle.",
   filename: "blue-circle.svg",
   svg,
 };
+
+const usage = { model: "gpt-4.1-mini", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 };
+const validOutput = { output: artwork, usage };
 
 for (const [name, body] of [
   ["empty messages", { messages: [] }],
@@ -136,10 +139,11 @@ test("streams progress and validated result, passing history and current SVG", a
   assert.equal(events[1].characters, 50);
   assert.deepEqual(events[2], {
     type: "result",
-    message: validOutput.message,
+    usage,
+    message: artwork.message,
     document: {
-      name: validOutput.filename,
-      description: validOutput.message,
+      name: artwork.filename,
+      description: artwork.message,
       source: svg,
       width: 100,
       height: 100,
@@ -199,8 +203,8 @@ for (const [name, unsafe] of [
     );
     assert.equal(before.status, 400);
     const after = await handleGeneration(request(input), async () => ({
-      ...validOutput,
-      svg: unsafe,
+      output: { ...artwork, svg: unsafe },
+      usage,
     }));
     const text = await after.text();
     assert.match(text, /"type":"error"/);
