@@ -10,6 +10,7 @@ import {
 } from "@/lib/workspace/contracts";
 import { recordFlowEvent } from "@/lib/workspace/flow";
 import { requestGeneration } from "@/lib/workspace/generate-client";
+import { CLIENT_GENERATION_TIMEOUT_MS } from "@/lib/workspace/generation-limits";
 import type { ChatMessage, SvgDocument } from "@/lib/workspace/types";
 
 const welcome: ChatMessage = {
@@ -45,7 +46,7 @@ export function SvgWorkspace() {
     setPreview(null);
     setActivity("Starting generation…");
     setError(null);
-    const timeout = setTimeout(() => controller.abort(), 130_000);
+    const timeout = setTimeout(() => controller.abort(), CLIENT_GENERATION_TIMEOUT_MS);
     try {
       await requestGeneration(input, controller.signal, (event) => {
         if (activeRequest.current !== controller) return;

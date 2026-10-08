@@ -218,7 +218,7 @@ test("accepts gradients with local references and text with escaped XML", () => 
   assert.equal(safeSvgSchema.safeParse(source).success, true);
 });
 
-test("redacts provider errors and makes no automatic retries", async () => {
+test("HTTP handler redacts errors without restarting the whole generation", async () => {
   let calls = 0;
   const response = await handleGeneration(request(input), async () => {
     calls++;

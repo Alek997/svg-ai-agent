@@ -11,6 +11,7 @@ import { z } from "zod";
 import { getLLM } from "./model";
 import { safeSvgSchema } from "../svg/validate-svg";
 import type { GenerationRequest } from "../workspace/contracts";
+import { GENERATION_TIMEOUT_MS, MAX_OUTPUT_TOKENS, MAX_PROVIDER_RETRIES } from "../workspace/generation-limits";
 
 // The model gets a plain JSON schema. XML safety is checked separately on the server.
 export const modelOutputSchema = z
@@ -89,9 +90,11 @@ export function createSvgAgent(
       }),
     },
     stopWhen: isStepCount(MAX_AGENT_STEPS),
-    maxOutputTokens: 8000,
-    maxRetries: 0,
-    timeout: 120_000,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    // SDK retries transient failures opening a provider stream; SVG repair
+    // remains part of the bounded tool loop. All retries share this deadline.
+    maxRetries: MAX_PROVIDER_RETRIES,
+    timeout: GENERATION_TIMEOUT_MS,
     providerOptions: { openai: { store: false } },
     // This SDK version exposes no agent-level onError option. prepareCall
     // forwards it to streamText to prevent raw provider errors being logged.

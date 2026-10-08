@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APICallError } from "ai";
+import { APICallError, RetryError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { generateSvg } from "../lib/ai/generate-svg";
 import { buildSvgMessages, createSvgAgent } from "../lib/ai/svg-agent";
@@ -69,7 +69,7 @@ test("SDK returns structured SVG output with server-owned system instructions", 
   assert.equal(result.usage.totalTokens, 400);
   assert.equal(model.doStreamCalls.length, 2);
   const call = model.doStreamCalls[0];
-  assert.equal(call.maxOutputTokens, 8000);
+  assert.equal(call.maxOutputTokens, 32_768);
   assert.equal(call.prompt[0].role, "system");
   assert.equal(call.prompt.at(-1)?.role, "user");
   assert.match(JSON.stringify(call.prompt), /untrusted/);
@@ -105,20 +105,21 @@ test("agent can generate structured output directly for an eval runner", async (
   assert.equal(agent.getValidatedSvg(), output.svg);
   assert.equal(result.steps.length, 2);
   assert.equal(model.doGenerateCalls.length, 2);
-  assert.equal(model.doGenerateCalls[0].maxOutputTokens, 8000);
+  assert.equal(model.doGenerateCalls[0].maxOutputTokens, 32_768);
   assert.equal(model.doGenerateCalls[0].prompt[1].role, "user");
   assert.doesNotMatch(JSON.stringify(model.doGenerateCalls[0].prompt), /<svg/);
   assert.deepEqual(input.messages, originalMessages);
   assert.equal(result.totalUsage.outputTokens, 200);
 });
 
-test("agent does not retry or log raw retryable provider errors", async (context) => {
+test("agent bounds transient provider retries without logging raw errors", async (context) => {
   const log = context.mock.method(console, "error", () => {});
   const error = new APICallError({
     message: "Sensitive provider error",
     url: "https://example.test/model",
     requestBodyValues: { prompt: "private artwork" },
     statusCode: 503,
+    responseHeaders: { "retry-after-ms": "1" },
   });
   const model = new MockLanguageModelV4({ doStream: () => { throw error; } });
   await assert.rejects(
@@ -128,10 +129,79 @@ test("agent does not retry or log raw retryable provider errors", async (context
       () => {},
       model,
     ),
-    (caught) => caught === error,
+    (caught) => RetryError.isInstance(caught) && caught.reason === "maxRetriesExceeded" && caught.lastError === error,
   );
-  assert.equal(model.doStreamCalls.length, 1);
+  assert.equal(model.doStreamCalls.length, 3);
   assert.equal(log.mock.callCount(), 0);
+});
+
+test("agent recovers from a transient failure before the stream opens", async () => {
+  let call = 0;
+  const model = new MockLanguageModelV4({ doStream: async () => {
+    switch (call++) {
+      case 0: throw new APICallError({
+        message: "Temporary failure", url: "https://example.test/model",
+        requestBodyValues: {}, statusCode: 429,
+        responseHeaders: { "retry-after-ms": "1" },
+      });
+      case 1: return toolStep("validateSvg", { svg: output.svg }, "validated");
+      default: return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
+    }
+  } });
+  const result = await generateSvg(
+    { messages: [{ role: "user", content: "Draw a circle" }] },
+    new AbortController().signal, () => {}, model,
+  );
+  assert.deepEqual(result.output, output);
+  assert.equal(model.doStreamCalls.length, 3);
+  assert.equal(result.usage.totalTokens, 400);
+});
+
+test("agent does not retry permanent provider errors", async () => {
+  const error = new APICallError({
+    message: "Invalid credentials", url: "https://example.test/model",
+    requestBodyValues: {}, statusCode: 401,
+  });
+  const model = new MockLanguageModelV4({ doStream: () => { throw error; } });
+  await assert.rejects(() => generateSvg(
+    { messages: [{ role: "user", content: "Draw a circle" }] },
+    new AbortController().signal, () => {}, model,
+  ), (caught) => caught === error);
+  assert.equal(model.doStreamCalls.length, 1);
+});
+
+test("cancelling during retry backoff prevents further provider calls", async () => {
+  const controller = new AbortController();
+  const model = new MockLanguageModelV4({ doStream: () => {
+    setTimeout(() => controller.abort(), 10);
+    throw new APICallError({
+      message: "Temporary failure", url: "https://example.test/model",
+      requestBodyValues: {}, statusCode: 503,
+    });
+  } });
+  await assert.rejects(() => generateSvg(
+    { messages: [{ role: "user", content: "Draw a circle" }] },
+    controller.signal, () => {}, model,
+  ));
+  assert.equal(model.doStreamCalls.length, 1);
+});
+
+test("a failure inside an open stream is not automatically replayed", async () => {
+  const model = new MockLanguageModelV4({ doStream: {
+    stream: new ReadableStream({ start(controller) {
+      controller.enqueue({ type: "stream-start", warnings: [] });
+      controller.enqueue({ type: "error", error: new APICallError({
+        message: "Stream interrupted", url: "https://example.test/model",
+        requestBodyValues: {}, statusCode: 503,
+      }) });
+      controller.close();
+    } }),
+  } });
+  await assert.rejects(() => generateSvg(
+    { messages: [{ role: "user", content: "Draw a circle" }] },
+    new AbortController().signal, () => {}, model,
+  ));
+  assert.equal(model.doStreamCalls.length, 1);
 });
 
 test("malformed model JSON fails rather than returning raw SVG", async () => {

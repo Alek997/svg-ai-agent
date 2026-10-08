@@ -11,6 +11,7 @@ import {
   type GenerationUsage,
 } from "../workspace/contracts";
 import { safeSvgSchema } from "../svg/validate-svg";
+import { GENERATION_TIMEOUT_MS } from "../workspace/generation-limits";
 
 const resultSchema = z
   .object({
@@ -93,7 +94,7 @@ async function readRequest(request: Request) {
 export async function handleGeneration(
   request: Request,
   generate: GenerateSvg,
-  timeoutMs = 120_000,
+  timeoutMs = GENERATION_TIMEOUT_MS,
 ) {
   let input: GenerationRequest;
   try {
