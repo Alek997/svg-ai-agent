@@ -213,7 +213,7 @@ Use `await agent.stream(...)` for streaming or `await agent.generate(...)` for
 a complete result. Structured model output is not SVG safety validation: the
 HTTP handler still validates the complete result, while other consumers must
 validate inputs and SVG themselves before rendering. Both agent methods have a
-300-second total timeout, a 32768-token cap per step, at most six steps, and up to
+290-second total timeout, a 32768-token cap per step, at most six steps, and up to
 two provider retries per step for transient failures opening the stream. Retries
 use SDK backoff and share the total deadline. Permanent errors, cancellation,
 and failures inside an already-open stream are not automatically replayed; the
@@ -238,8 +238,8 @@ history would require authentication and conversation ownership checks.
   320000 bytes for the final result.
 - At most six model steps, two SDK retries for transient provider call failures,
   at most 32768 output tokens per step (196608 across six completed steps),
-  a 300-second total generation timeout including retries, and cancellation
-  when the client disconnects. The browser times out at 310 seconds. Shared limits
+  a 290-second total generation timeout including retries, and cancellation
+  when the client disconnects. The browser times out at 300 seconds. Shared limits
   live in `lib/workspace/generation-limits.ts`. Retried provider attempts may incur
   additional usage not reported in the final successful response; these bounds
   are not a billing quota. Conversation limits ask the user to start a new conversation.
@@ -325,8 +325,9 @@ Production social login needs your own provider OAuth credentials. Check login,
 invitation acceptance, logout, and unauthorized API requests on the deployed domain.
 Add request/rate/cost protection before public access. Current
 bounds constrain individual requests; they do not enforce per-user quotas across
-requests or server instances. The route requests a 305-second platform duration;
-availability depends on the deployment plan.
+requests or server instances. The route requests a 300-second platform duration,
+within Vercel Hobby's maximum with Fluid compute enabled. The generation deadline
+is 290 seconds to leave room for response cleanup before the platform cutoff.
 
 Next steps: verify live multi-step tool calling with the configured model, evaluate
 fixed prompts for fidelity, latency and cost, and consider persisted document
