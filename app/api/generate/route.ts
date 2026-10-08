@@ -3,7 +3,7 @@ import { handleGeneration } from "@/lib/ai/handle-generation";
 import { auth } from "@clerk/nextjs/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 65;
+export const maxDuration = 125;
 
 export async function POST(request: Request) {
   const { userId } = await auth();
@@ -13,5 +13,7 @@ export async function POST(request: Request) {
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
-  return handleGeneration(request, generateSvg);
+  return handleGeneration(request, (input, signal, progress, onEvent) =>
+    generateSvg(input, signal, progress, undefined, onEvent),
+  );
 }

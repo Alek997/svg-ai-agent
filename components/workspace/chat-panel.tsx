@@ -13,6 +13,7 @@ type ChatPanelProps = {
   onReset: () => void;
   isLoading: boolean;
   progress: number;
+  activity: string;
   error: string | null;
   onRetry?: () => void;
 };
@@ -23,6 +24,7 @@ export function ChatPanel({
   onReset,
   isLoading,
   progress,
+  activity,
   error,
   onRetry,
 }: ChatPanelProps) {
@@ -70,7 +72,7 @@ export function ChatPanel({
         ))}
         {isLoading && (
           <p role="status" className="ml-10 text-xs text-stone-500">
-            {progress ? "Drawing your SVG…" : "Starting generation…"}
+            {activity}{progress > 0 ? ` · ${progress.toLocaleString()} characters` : ""}
           </p>
         )}
         {messages.length === 1 && !isLoading && (

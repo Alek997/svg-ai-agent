@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { SvgDocument } from "@/lib/workspace/types";
@@ -9,10 +9,14 @@ export function SvgCanvas({
   document,
   isSample = false,
   isLoading = false,
+  hasPreview = false,
+  activity = "Working…",
 }: {
   document: SvgDocument;
   isSample?: boolean;
   isLoading?: boolean;
+  hasPreview?: boolean;
+  activity?: string;
 }) {
   const [view, setView] = useState<"preview" | "source">("preview");
   const [zoom, setZoom] = useState(100);
@@ -24,6 +28,12 @@ export function SvgCanvas({
     ? copyFeedback.status
     : null;
   const image = useRef<HTMLImageElement>(null);
+  const objectUrl = useRef<string | null>(null);
+  const attachImage = useCallback((node: HTMLImageElement | null) => {
+    image.current = node;
+    // Returning from Code view mounts a new img, but reuses the same Blob URL.
+    if (node && objectUrl.current) node.src = objectUrl.current;
+  }, []);
   const download = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
     if (copyFeedback?.status !== "copied") return;
@@ -42,13 +52,23 @@ export function SvgCanvas({
   }
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(
+    const url = URL.createObjectURL(
       new Blob([document.source], { type: "image/svg+xml" }),
     );
-    if (image.current) image.current.src = objectUrl;
-    if (download.current) download.current.href = objectUrl;
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [document.source, view]);
+    objectUrl.current = url;
+    if (image.current) image.current.src = url;
+    return () => {
+      URL.revokeObjectURL(url);
+      if (objectUrl.current === url) objectUrl.current = null;
+    };
+  }, [document.source]);
+
+  // Download availability changes independently from image rendering.
+  useEffect(() => {
+    if (!download.current) return;
+    if (isLoading || !objectUrl.current) download.current.removeAttribute("href");
+    else download.current.href = objectUrl.current;
+  }, [document.source, isLoading]);
 
   return (
     <section
@@ -93,7 +113,16 @@ export function SvgCanvas({
           </Button>
         </div>
       </div>
-      <div className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12">
+      <div aria-busy={isLoading} className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12">
+        {isLoading && (
+          <div role="status" className="absolute top-4 z-10 flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-4 py-2 text-xs text-stone-600 shadow-sm">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700" />
+            {activity}
+          </div>
+        )}
+        {isLoading && !hasPreview && isSample && view === "preview" && (
+          <div aria-hidden="true" className="absolute h-64 w-64 animate-pulse rounded-2xl border border-stone-200 bg-stone-100" />
+        )}
         {view === "preview" ? (
           <>
             <div className="absolute top-6 left-6 text-[10px] uppercase tracking-[0.15em] text-stone-400">
@@ -103,11 +132,11 @@ export function SvgCanvas({
               {/* SVG is rendered as an image, never injected into the page DOM. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                ref={image}
+                ref={attachImage}
                 alt={document.description}
                 width={document.width}
                 height={document.height}
-                className="h-auto max-h-full max-w-full shrink-0 object-contain drop-shadow-xl transition-transform"
+                className={`${isLoading && !hasPreview && isSample ? "invisible" : ""} h-auto max-h-full max-w-full shrink-0 object-contain drop-shadow-xl transition-transform`}
                 style={{
                   width: document.width,
                   transform: `scale(${zoom / 100})`,
@@ -129,7 +158,7 @@ export function SvgCanvas({
           <div className="w-full overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2">
               <span className="text-xs text-stone-500">SVG source</span>
-              <Button variant="ghost" onClick={copySource} aria-label="Copy SVG code">
+              <Button variant="ghost" onClick={copySource} disabled={isLoading} aria-label="Copy SVG code">
                 <Icon name="copy" width={14} height={14} />
                 {copyStatus === "copied" ? "Copied!" : "Copy code"}
               </Button>
@@ -187,14 +216,21 @@ export function SvgCanvas({
             {document.width} × {document.height} · SVG
           </p>
         </div>
-        <a
-          ref={download}
-          download={document.name}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
-        >
-          <Icon name="download" width={14} height={14} />
-          Download SVG
-        </a>
+        {isLoading ? (
+          <Button disabled className="shrink-0">
+            <Icon name="download" width={14} height={14} />
+            Download SVG
+          </Button>
+        ) : (
+          <a
+            ref={download}
+            download={document.name}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+          >
+            <Icon name="download" width={14} height={14} />
+            Download SVG
+          </a>
+        )}
       </footer>
     </section>
   );

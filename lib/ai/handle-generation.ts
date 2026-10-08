@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ModelConfigurationError } from "./errors";
 import {
   generationRequestSchema,
+  generationEventSchema,
   generationUsageSchema,
   MAX_REQUEST_BYTES,
   MAX_RESPONSE_BYTES,
@@ -23,6 +24,7 @@ export type GenerateSvg = (
   input: GenerationRequest,
   signal: AbortSignal,
   onProgress: (characters: number) => void,
+  onEvent?: (event: GenerationEvent) => void,
 ) => Promise<{ output: unknown; usage: GenerationUsage }>;
 
 class RequestError extends Error {
@@ -91,7 +93,7 @@ async function readRequest(request: Request) {
 export async function handleGeneration(
   request: Request,
   generate: GenerateSvg,
-  timeoutMs = 60_000,
+  timeoutMs = 120_000,
 ) {
   let input: GenerationRequest;
   try {
@@ -118,6 +120,8 @@ export async function handleGeneration(
       const send = (event: GenerationEvent) => {
         if (!closed && !request.signal.aborted) {
           const chunk = encoder.encode(`${JSON.stringify(event)}\n`);
+          // Snapshots are expendable; reserve room for the final SVG and errors.
+          if (event.type === "preview" && responseBytes + chunk.byteLength > MAX_RESPONSE_BYTES - 320_000) return;
           if (responseBytes + chunk.byteLength > MAX_RESPONSE_BYTES) {
             throw new Error("Response limit exceeded");
           }
@@ -129,6 +133,11 @@ export async function handleGeneration(
         send({ type: "progress", characters: 0 });
         const raw = await generate(input, signal, (characters) =>
           send({ type: "progress", characters }),
+          (event) => {
+            if (event.type === "preview") {
+              send({ type: "preview", svg: safeSvgSchema.parse(event.svg.source) });
+            } else if (event.type === "activity" || event.type === "tool" || event.type === "step" || event.type === "response") send(generationEventSchema.parse(event));
+          },
         );
         if (signal.aborted) throw new Error("Aborted");
         const result = resultSchema.safeParse(raw.output);

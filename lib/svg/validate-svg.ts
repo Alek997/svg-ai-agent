@@ -84,8 +84,8 @@ const referenceAttributes = new Set(["fill", "stroke", "clip-path", "mask"]);
 const fragmentPaint = /^url\(#[A-Za-z_][\w.-]*\)$/;
 
 export class InvalidSvgError extends Error {
-  constructor() {
-    super("The SVG failed safety validation. Try a simpler description.");
+  constructor(message = "The SVG failed safety validation. Try a simpler description.") {
+    super(message);
   }
 }
 
@@ -98,29 +98,29 @@ export function validateSvg(source: string) {
   let depth = 0;
   let count = 0;
   let dimensions: { width: number; height: number } | undefined;
-  const fail = () => {
-    throw new InvalidSvgError();
+  const fail = (message = "SVG is malformed or contains unsupported content.") => {
+    throw new InvalidSvgError(message);
   };
-  parser.on("error", fail);
-  parser.on("doctype", fail);
-  parser.on("processinginstruction", fail);
-  parser.on("xmldecl", fail);
+  parser.on("error", () => fail("Malformed XML: check matching tags and quoted attributes."));
+  parser.on("doctype", () => fail("DOCTYPE is forbidden."));
+  parser.on("processinginstruction", () => fail("Processing instructions are forbidden."));
+  parser.on("xmldecl", () => fail("Remove the XML declaration; start with <svg>."));
   parser.on("opentag", (tag) => {
-    if (++depth > 32 || ++count > 1000) fail();
+    if (++depth > 32 || ++count > 1000) fail("Use at most 1000 elements and nesting depth 32.");
     if (tag.uri !== SVG_NAMESPACE || tag.prefix || !elements.has(tag.local))
-      fail();
+      fail(`Unsupported element or namespace: ${tag.name}.`);
     if (depth === 1) {
-      if (tag.local !== "svg" || dimensions) fail();
+      if (tag.local !== "svg" || dimensions) fail("Use exactly one svg root element.");
       const viewBox = tag.attributes.viewBox?.value
         .trim()
         .split(/[\s,]+/)
         .map(Number);
       if (!viewBox || viewBox.length !== 4 || !viewBox.every(Number.isFinite))
-        fail();
+        fail("The root needs a viewBox with four finite numbers.");
       const [, , width, height] = viewBox!;
-      if (width <= 0 || height <= 0 || width > 4096 || height > 4096) fail();
+      if (width <= 0 || height <= 0 || width > 4096 || height > 4096) fail("viewBox width and height must be positive and at most 4096.");
       dimensions = { width, height };
-    } else if (tag.local === "svg") fail();
+    } else if (tag.local === "svg") fail("Nested svg elements are unsupported; use g instead.");
     for (const attribute of Object.values(tag.attributes)) {
       if (
         attribute.name === "xmlns" &&
@@ -129,7 +129,7 @@ export function validateSvg(source: string) {
       )
         continue;
       if (attribute.prefix || attribute.uri || !attributes.has(attribute.name))
-        fail();
+        fail(`Unsupported attribute: ${attribute.name}. Use presentation attributes, no styles, href or event handlers.`);
       const value = attribute.value.trim();
       // No style, href, event handlers, embedded resources, or indirect CSS references.
       if (/url\s*\(/i.test(value)) {
@@ -137,14 +137,14 @@ export function validateSvg(source: string) {
           !referenceAttributes.has(attribute.name) ||
           !fragmentPaint.test(value)
         )
-          fail();
+          fail("References must be local url(#id) in fill, stroke, clip-path or mask.");
       }
       if (
         /\\|[\u0000-\u001f]|(?:https?:|data:|javascript:|file:|\/\/)/i.test(
           value,
         )
       )
-        fail();
+        fail("External resources, control characters and CSS escapes are forbidden.");
     }
   });
   parser.on("closetag", () => {
@@ -152,8 +152,8 @@ export function validateSvg(source: string) {
   });
   try {
     parser.write(source).close();
-  } catch {
-    throw new InvalidSvgError();
+  } catch (error) {
+    throw error instanceof InvalidSvgError ? error : new InvalidSvgError();
   }
   if (!dimensions) throw new InvalidSvgError();
   return { source: source.trim(), ...dimensions };
@@ -166,10 +166,10 @@ export const safeSvgSchema = z
   .transform((source, context) => {
     try {
       return validateSvg(source);
-    } catch {
+    } catch (error) {
       context.addIssue({
         code: "custom",
-        message: "SVG is malformed or contains unsupported content.",
+        message: error instanceof InvalidSvgError ? error.message : "SVG is malformed or contains unsupported content.",
       });
       return z.NEVER;
     }

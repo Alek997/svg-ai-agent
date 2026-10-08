@@ -3,7 +3,7 @@ import { z } from "zod";
 export const MAX_PROMPT_LENGTH = 2000;
 export const MAX_SVG_LENGTH = 48_000;
 export const MAX_REQUEST_BYTES = 96_000;
-export const MAX_RESPONSE_BYTES = 96_000;
+export const MAX_RESPONSE_BYTES = 1_500_000;
 
 export const messageSchema = z
   .object({
@@ -56,7 +56,41 @@ export const generationUsageSchema = z.object({
 
 export type GenerationUsage = z.infer<typeof generationUsageSchema>;
 
+export const previewSvgSchema = svgDocumentSchema.pick({ source: true, width: true, height: true });
+
+// Only our SVG tools' bounded inputs/results cross the browser boundary.
+export const toolTraceSchema = z.object({
+  id: z.string().min(1).max(200),
+  name: z.enum(["querySvg", "validateSvg"]),
+  step: z.number().int().min(1).max(6),
+  status: z.enum(["pending", "running", "completed", "error"]),
+  input: z.object({ svg: z.string().max(MAX_SVG_LENGTH).optional() }).strict().optional(),
+  output: z.union([
+    z.object({ source: z.string().max(MAX_SVG_LENGTH).nullable(), version: z.number().int().nonnegative() }).strict(),
+    z.object({ valid: z.literal(true), version: z.number().int().nonnegative(), width: z.number().positive(), height: z.number().positive() }).strict(),
+    z.object({ valid: z.literal(false), error: z.string().max(1000) }).strict(),
+  ]).optional(),
+  error: z.string().max(500).optional(),
+}).strict();
+export type ToolTrace = z.infer<typeof toolTraceSchema>;
+
+export const stepTraceSchema = z.object({
+  step: z.number().int().min(1).max(6),
+  status: z.enum(["running", "completed", "interrupted"]),
+  description: z.string().min(1).max(2000),
+}).strict();
+export type StepTrace = z.infer<typeof stepTraceSchema>;
+
 export const generationEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("response"), step: z.number().int().min(1).max(6), text: z.string().max(2000) }).strict(),
+  z.object({ type: z.literal("step"), detail: stepTraceSchema }).strict(),
+  z.object({ type: z.literal("tool"), call: toolTraceSchema }).strict(),
+  z.object({ type: z.literal("preview"), svg: previewSvgSchema }).strict(),
+  z.object({
+    type: z.literal("activity"),
+    step: z.number().int().min(1).max(6),
+    action: z.enum(["working", "querySvg", "validateSvg"]),
+  }).strict(),
   z
     .object({
       type: z.literal("progress"),

@@ -4,30 +4,75 @@ Turn a text prompt into a clean SVG, with a browser preview and conversation sid
 
 ## Current behavior
 
-Sending a chat message makes `POST /api/generate` with the user/assistant history
-and, for edits, the current validated SVG. The server makes one bounded model call,
-streams progress events, validates the finished SVG, and returns artwork plus a
-short assistant reply. The canvas shows the last valid artwork while generation
-runs, and updates only when the result passes validation. Preview, code, zoom,
-and download use that same SVG. Each SVG's Code view includes a Copy code button
-that copies the displayed source, confirms success, and reports clipboard failures.
-Successful assistant replies display provider-reported total, input, and output
-tokens, plus cached input when reported. These counts cover the whole request,
-including conversation history and current artwork; cached input is already part
-of the input count. Missing usage shows Unknown. No dollar cost is calculated,
-and failed requests are not included in these per-reply counts. The header shows
-the configured model as a read-only label, including before the first generation.
-Failed requests show an error and a retry button.
-Starting a new conversation cancels the active request and clears history/artwork.
-History is in browser memory and resets on reload. The initial artwork is a sample.
+Sending a chat message makes `POST /api/generate` with user/assistant history
+and, for edits, the current validated SVG. A server-only AI SDK `ToolLoopAgent`
+can work across up to six model steps per request:
 
-Streaming currently reports progress, **not partially rendered artwork or streamed
-assistant text**. Safe progressive SVG snapshots remain a separate future step.
-Generation uses a reusable AI SDK `ToolLoopAgent`, explicitly limited to one step
-with `isStepCount(1)`. It currently has no tools or automatic repair attempts.
-The agent abstraction centralizes configuration; iterative tool use and feedback
-would require adding tools and deliberately increasing the step budget. One model
-call responds to each submission; manual retry starts another bounded call.
+- `querySvg` retrieves current SVG code and a request-local revision counter.
+  The source is available through the tool instead of being inserted into the
+  initial model prompt on every turn. Tool results still consume input tokens.
+- `validateSvg` checks a proposed complete SVG using the XML safety validator.
+  Failure returns a specific error so the model can repair and validate again.
+  Success updates only the request-local candidate; it does not commit browser state.
+- The model's final structured reply contains only filename and explanation.
+  The server attaches the SVG accepted by the latest validateSvg proposal, then
+  independently validates the complete result before committing it. A request
+  cannot finalize without a successful proposal, or after its latest validation
+  failed. This avoids generating and streaming a second copy of the same SVG.
+
+SVG text streams inside validateSvg tool arguments; final response text streams
+separately and cannot replay the drawing. The
+server decodes the partial JSON string, parses XML, and builds standalone snapshots
+at completed-element boundaries. It closes only containers observed by the parser,
+then checks each snapshot with the same allowlist as final output. Updates are
+throttled to 250 ms, with a final flush at step/tool-input boundaries. Unsafe or
+incomplete snapshots are withheld; the browser retains the last safe preview.
+
+Before the first snapshot, the initial canvas shows a skeleton and a Working
+indicator. During edits the previous artwork remains visible until a safe draft
+arrives. The canvas and chat show step/tool activity throughout generation. Each assistant
+reply includes one small, muted Details text toggle. Its timeline appends events
+in arrival order: model starts, tool preparation/calls, inputs, separate tool
+results, public model response text, preview updates, model completion and the
+final result or error. Parallel tools' results remain in their actual arrival
+order. Consecutive public text updates are coalesced without moving across other
+events. Preview entries show dimensions and size; final SVG source is inspectable
+inside the final result. Expanding Details reveals the flow in a bounded scroll
+area without large tool cards. It stays expanded as new events arrive. Calls appear while arguments are prepared, then update as tools
+run and finish. Validation results show their returned valid flag and error;
+failed requests retain the partial timeline and final error. Private model reasoning and raw provider metadata are
+not exposed. Existing tool-only records remain available, but older unrecorded
+model steps cannot be reconstructed.
+These display records are retained in browser memory with the reply and are not
+included in subsequent model message history. Only the server-owned SVG tools'
+bounded inputs/results are forwarded; raw provider errors are never shown.
+Temporary previews are separate from the saved document. Download and copy are
+disabled during generation; only a complete validated result replaces the saved
+SVG. Failed requests discard the draft, retain the last completed SVG, and offer
+retry. Starting a new conversation cancels generation and clears state.
+
+The preview uses a Blob URL in an image element, never inline markup injection.
+Its URL changes only when the exact SVG source changes. Finalizing an unchanged
+preview removes the loader and enables download without reloading the image.
+Code/Preview switches reuse the same URL; replacement and unmount revoke it.
+Download is a visibly disabled native button during generation and iteration;
+when the run finishes, it becomes a link using the existing image URL.
+Code view, zoom and clipboard feedback remain available. Successful replies show
+provider-reported token usage summed across all steps, including history and tool
+results. Missing counts show Unknown. Failed requests do not show incurred usage.
+No dollar cost is calculated. The model label is read-only.
+
+History and artwork live in browser memory and reset on reload. `currentSvg` still
+travels from browser to server on edit requests; eliminating that transfer would
+require persisted, authenticated document storage. Revision counters reset per
+request and are not cross-request concurrency control. Requests run sequentially
+in the UI. No image-generation or visual-inspection model is used.
+
+Progressive preview is an approximation: unfinished paths, text, and elements do
+not appear until a completed-element checkpoint is available; unfinished gradients,
+masks and clipping definitions can change the appearance of later snapshots.
+The model may redraw a full revision rather than emit small patches. A malformed
+later chunk retains the previous safe preview; it cannot produce a final success.
 
 ## Authentication
 
@@ -90,26 +135,29 @@ Components; interactive components use `use client`.
 - `app/page.tsx`, `app/layout.tsx`, `app/globals.css`: composition, metadata, styles.
 - `app/api/generate/route.ts`: Node.js Route Handler for generation requests.
 - `components/ui/`: reusable buttons and icons.
-- `components/workspace/`: canvas, chat, messages, composer, and request coordination.
+- `components/workspace/`: canvas, chat, messages, compact chronological execution details, composer,
+  and request coordination.
 - `lib/workspace/contracts.ts`: shared Zod request/response schemas and limits.
 - `lib/workspace/generate-client.ts`: fetch and incremental NDJSON response reader.
+- `lib/workspace/flow.ts`: preserves chronological event order for the conversation timeline.
 - `lib/workspace/types.ts`, `sample.ts`: inferred UI types and authored sample.
 - `lib/ai/model.ts`: server-only environment validation and model configuration.
 - `lib/ai/svg-agent.ts`: server-only reusable agent factory, instructions, model
-  output schema, one-step/token/retry limits, and conversation preparation.
+  output schema, request-local tools, step/token/retry limits, and conversation preparation.
 - `lib/ai/usage.ts`: converts SDK token usage to explicit, nullable UI counts.
-- `lib/ai/generate-svg.ts`: streams the agent output with throttled progress and
-  a character limit for the HTTP generation flow.
+- `lib/ai/generate-svg.ts`: streams tool activity and validated draft snapshots with throttling
+  and a character limit for the HTTP generation flow.
 - `lib/ai/handle-generation.ts`: request validation, streaming transport, result
   validation, safe errors, cancellation. Model injection allows mocked tests.
 - `lib/svg/validate-svg.ts`: strict XML parsing with `saxes` and Zod transformation.
+- `lib/svg/progressive-svg.ts`: partial JSON string decoding and parser-based preview snapshots.
 - `tests/`: mocked request, SDK, stream-client, and SVG safety tests.
 
 ```text
 ChatComposer → SvgWorkspace → POST /api/generate
   → Zod request validation + current SVG validation
-  → server-only ToolLoopAgent with server-owned instructions (one step)
-  → progress events → XML validation + result schema
+  → server-only ToolLoopAgent (up to six steps, querySvg + validateSvg)
+  → activity/progress/validated preview events → final XML validation + result schema
   → result event → assistant history + SVG image preview/download
 ```
 
@@ -127,7 +175,8 @@ Example request (UI-only message IDs and the welcome message are excluded):
 ```
 
 The response is newline-delimited JSON (`application/x-ndjson`) with `progress`,
-`result`, or `error` events. A result contains `message` and a `document` with
+`activity`, `step`, `tool`, `response`, `preview`, `result`, or `error` events. Preview carries safe source and
+dimensions; activity carries the current step and tool name. A result contains `message` and a `document` with
 `name`, `description`, `source`, `width`, and `height`, plus server-supplied `usage`
 with model and token counts. Usage is separate from model-generated output and is
 not forwarded in conversation history. Request errors return JSON
@@ -138,8 +187,9 @@ with an HTTP 400/413/415 status; errors after streaming starts are stream events
 `createSvgAgent()` builds the configured agent lazily, so importing the module
 does not read credentials. Pass a model to `createSvgAgent(model)` to use a mock
 or an alternative model with the same instructions, output schema, and limits.
-`buildSvgMessages(input)` prepares history and inserts current artwork as
-untrusted user context without changing the input.
+`buildSvgMessages(input)` copies history without inserting SVG code. Supply
+`input.currentSvg` to the factory so querySvg can retrieve it. Create a fresh
+agent per request because tool proposal state belongs to that request.
 
 ```ts
 import { buildSvgMessages, createSvgAgent } from "@/lib/ai/svg-agent";
@@ -149,10 +199,13 @@ import { safeSvgSchema } from "@/lib/svg/validate-svg";
 const input = generationRequestSchema.parse({
   messages: [{ role: "user", content: "Draw a blue circle" }],
 });
-const agent = createSvgAgent();
+const agent = createSvgAgent(undefined, input.currentSvg);
 const result = await agent.generate({ messages: buildSvgMessages(input) });
-const validatedSvg = safeSvgSchema.parse(result.output.svg);
-// result.output contains message, filename, and svg.
+const source = agent.getValidatedSvg();
+if (!source) throw new Error("No validated proposal was completed");
+const validatedSvg = safeSvgSchema.parse(source);
+// result.output contains only message and filename.
+// generateSvg() combines that metadata with the accepted SVG for the HTTP handler.
 // result.totalUsage and result.steps are available for eval measurements.
 ```
 
@@ -160,8 +213,9 @@ Use `await agent.stream(...)` for streaming or `await agent.generate(...)` for
 a complete result. Structured model output is not SVG safety validation: the
 HTTP handler still validates the complete result, while other consumers must
 validate inputs and SVG themselves before rendering. Both agent methods have a
-60-second timeout, an 8000-token cap, and zero retries. The HTTP streaming adapter
-additionally enforces its 64000-character cap and request cancellation.
+120-second total timeout, an 8000-token cap per step, at most six steps, and zero
+provider retries. The HTTP streaming adapter additionally enforces its
+384000-character cap across tool arguments and text and request cancellation.
 Standalone Node runners need `--conditions=react-server` to import `server-only`
 modules (as in `npm test`), plus alias resolution if using `@/` imports.
 
@@ -174,10 +228,12 @@ structure, not truthfulness or immunity to prompt injection. Future server-owned
 history would require authentication and conversation ownership checks.
 
 - At most 20 messages, 2000 characters per message, 16000 total history characters.
-- Request and response bodies capped at 96000 bytes; SVG strings at 48000 characters.
-- One model call, no SDK retries, at most 8000 output tokens, 60-second generation
-  timeout, and cancellation when the client disconnects. The browser times out
-  at 70 seconds. Conversation limits ask the user to start a new conversation.
+- Requests capped at 96000 bytes; responses at 1500000 bytes; SVG strings at
+  48000 characters. Large preview updates are skipped when necessary to reserve
+  320000 bytes for the final result.
+- At most six model steps, no SDK retries, at most 8000 output tokens per step
+  (48000 across six steps), 120-second total generation timeout, and cancellation
+  when the client disconnects. The browser times out at 130 seconds. Conversation limits ask the user to start a new conversation.
 - Strict SVG element/attribute allowlists; positive `viewBox` dimensions up to
   4096; at most 1000 elements and nesting depth 32. Disallowed content causes the
   entire SVG to be rejected rather than silently altered.
@@ -188,50 +244,64 @@ history would require authentication and conversation ownership checks.
 The XML parser inspects structure and decoded attributes; regex is used only for
 individual value restrictions. SVG validation is integrated into Zod transforms.
 The image preview uses an SVG Blob URL, never `dangerouslySetInnerHTML`. Preview
-and download share the same URL, revoked on replacement and unmount. The client
+and download share the same URL after completion, revoked on replacement and
+unmount. Temporary previews cannot be downloaded. The client
 validates the server response contract; the authoritative SVG safety check runs
 on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
 
-Token reporting and the read-only model label were checked in the Codex browser
-using a temporary mocked generation response; the real route was restored after
-verification. All 43 mocked tests, lint, TypeScript, and the webpack production
-build passed. No live provider usage or billing was verified in this check.
+For the October 8, 2026 agent/preview and execution-details changes, 58 mocked tests, lint, TypeScript,
+and `npm run build -- --webpack` passed. The default `npm run build` was attempted;
+Turbopack could not bind its CSS processing port inside the sandbox. The missing
+local official SWC compiler binary was restored for the build without changing
+`package.json` or `package-lock.json`.
+
+Tests cover multi-step query/validate/repair tool calls, tool results appearing in
+subsequent model context, summed usage, termination after six tool-only steps,
+preview delivery before the model finishes, every XML prefix boundary, partial
+JSON escapes, malformed/unsafe drafts, transport preview safety, and response
+budget reservation, alongside existing request, cancellation and client tests.
+All model responses are mocked; automated tests do not spend API credits.
+
+Browser verification used an isolated temporary mock-stream page (removed after
+checking): the skeleton/loader appeared before the first preview, a circle rendered
+first and a rectangle appeared in the next snapshot while generation remained
+active, and tool/step status stayed visible. Copy/download were disabled during
+generation. A final download was saved and its SVG contents matched the completed
+mock document. Tool inspection was checked with a separate temporary mock page:
+pending/running/completed status, input/results, validation feedback, retained
+records, and toggles worked. The single Details section was also checked using a
+temporary mock: collapsed by default, every model/tool step visible after expansion,
+open state retained during updates, completed flow collapsible, and failure status
+retained. The compact chronological timeline was browser-checked with a temporary mock:
+small collapsed text toggle, expanded event order including public text and
+previews, and open state retained through completion. All temporary mock pages
+were removed. A follow-up sent the saved SVG; a failed draft restored the previous
+completed artwork with retry available. The image-reuse check used another temporary mock canvas: finalizing and starting
+an unchanged SVG preserved its URL and load count, downloading used that same URL,
+changing source created a new URL, and Code/Preview reused the existing URL. The
+mock page was removed. Tests also cover metadata-only final output, no preview
+replay on the final step, missing validation and a failed latest proposal. No live
+multi-step OpenAI call, visual fidelity evaluation, or deployed behavior was
+verified for these changes.
 
 ```bash
 npm test
 npm run lint
 npm run build
+# Sandbox fallback if Turbopack cannot bind its processing port:
+npm run build -- --webpack
 ```
 
-Automated tests use mocked model responses and never spend API credits. They cover
-payload limits/roles, history forwarding, SDK structured output and token limits,
-malformed XML, executable/external content, safe local gradients, redacted errors,
-timeouts/cancellation, and NDJSON records split across UTF-8 chunks.
+Earlier Clerk checks verified logged-out redirects, request-access rendering,
+restricted sign-up and an HTTP 401 for unauthenticated generation. The user
+subsequently confirmed authentication works locally. Production Clerk is not
+configured. These auth flows were not changed in this iteration.
 
-Clerk browser checks verified a logged-out `/` visit redirects to sign-in, the
-request-access form renders and rejects an empty email, and uninvited `/sign-up`
-shows Access restricted. An unauthenticated `POST /api/generate` returned HTTP 401
-with a sign-in error. No account was created and invitation delivery, successful
-email/social login, and logout were not verified by the agent. The user subsequently
-confirmed that authentication works locally. Clerk doctor confirmed
-the linked development application and keys; production is not configured.
-Lint and all 37 existing mocked tests passed. The default Turbopack build could not
-bind its processing port in this environment; `npm run build -- --webpack` passed.
-
-Earlier generation browser checks covered loading, disabled sending during generation, successful
-canvas/chat updates using a temporary mock, invalid output retaining the last
-valid artwork, and the real endpoint's missing-configuration error. The temporary
-mock is removed from the final route. No live OpenAI generation was verified during these browser checks:
-a local API key was not configured at that time. The in-app browser's download-event wait timed
-out during the earlier UI check; a saved download file remains unverified.
-
-The existing Google Fonts setup requires network access during production builds.
-In restricted environments, the build may need permission for network/processing
-ports, or `npm run build -- --webpack` as a fallback. The existing lint tooling
-chain still has five high-severity audit entries; review them separately rather
-than running `npm audit fix --force` and accepting a framework lint downgrade.
+The existing Google Fonts setup requires network during uncached production
+builds. The lint dependency chain still reports five high-severity audit entries;
+review those separately instead of forcing a framework lint downgrade.
 
 ## Deployment and next steps
 
@@ -242,9 +312,10 @@ Production social login needs your own provider OAuth credentials. Check login,
 invitation acceptance, logout, and unauthorized API requests on the deployed domain.
 Add request/rate/cost protection before public access. Current
 bounds constrain individual requests; they do not enforce per-user quotas across
-requests or server instances. The route requests a 65-second platform duration;
+requests or server instances. The route requests a 125-second platform duration;
 availability depends on the deployment plan.
 
-Next steps: verify a live model response, evaluate fixed prompts for fidelity,
-latency and cost, then prototype validated progressive SVG snapshots. A bounded
-repair loop can follow if invalid output proves a concrete recurring problem.
+Next steps: verify live multi-step tool calling with the configured model, evaluate
+fixed prompts for fidelity, latency and cost, and consider persisted document
+storage if edits must survive reloads. Final metadata reuses the validated SVG,
+so the model does not spend output tokens reproducing the accepted artwork.

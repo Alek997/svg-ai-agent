@@ -1,3 +1,4 @@
+import { RunDetails } from "./run-details";
 import { Icon } from "@/components/ui/icon";
 import type { ChatMessage as Message } from "@/lib/workspace/types";
 
@@ -20,6 +21,7 @@ export function ChatMessage({ message }: { message: Message }) {
         <p className="mb-1.5 text-[11px] font-medium text-stone-500">
           {isAssistant ? "SVG Studio" : "You"}
         </p>
+        {isAssistant && (message.runStatus || message.tools?.length || message.steps?.length) && <RunDetails message={message} />}
         <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-stone-600">
           {message.content}
         </p>
