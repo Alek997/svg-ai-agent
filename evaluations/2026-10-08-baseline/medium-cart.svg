@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+  <title>Shopping cart with three packages</title>
+  <desc>An outlined shopping cart with two wheels and three differently colored packages inside.</desc>
+  <g fill="none" stroke="#263746" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M45 51h27l22 34"/>
+    <path d="M89 85h232l-29 105H116z"/>
+    <path d="M132 192l8 25M278 192l6 25"/>
+  </g>
+  <g stroke="#263746" stroke-width="4" stroke-linejoin="round">
+    <rect x="127" y="126" width="49" height="53" rx="3" fill="#ef7864"/>
+    <path d="M151.5 126v53M127 140l24.5 9 24.5-9" fill="none" stroke="#a9473b" stroke-width="3"/>
+    <rect x="182" y="111" width="48" height="68" rx="3" fill="#53b8ad"/>
+    <path d="M206 111v68M182 127l24 9 24-9" fill="none" stroke="#287f78" stroke-width="3"/>
+    <rect x="238" y="132" width="44" height="47" rx="3" fill="#f2c75b"/>
+    <path d="M260 132v47M238 145l22 8 22-8" fill="none" stroke="#b4892f" stroke-width="3"/>
+  </g>
+  <g fill="#ffffff" stroke="#263746" stroke-width="7">
+    <circle cx="143" cy="233" r="16"/>
+    <circle cx="285" cy="233" r="16"/>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>Sun, cloud, and rain weather icon</title>
+  <circle cx="128" cy="128" r="118" fill="#EAF6FF" stroke="#B9D9ED" stroke-width="4"/>
+  <defs>
+    <clipPath id="icon-clip"><circle cx="128" cy="128" r="116"/></clipPath>
+  </defs>
+  <g clip-path="url(#icon-clip)">
+    <circle cx="99" cy="91" r="31" fill="#FFC928"/>
+    <path d="M65 145 C55 145 49 137 49 127 C49 117 57 109 68 108 C72 91 87 80 105 80 C122 80 136 91 141 106 C145 104 149 103 153 103 C168 103 180 114 181 129 C192 131 199 138 199 148 C199 159 190 167 178 167 L70 167 C58 167 50 160 50 151 C50 148 56 145 65 145 Z" fill="#FFFFFF" stroke="#C7DFEF" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M93 180 C93 174 104 160 104 160 C104 160 115 174 115 180 C115 187 110 192 104 192 C98 192 93 187 93 180 Z" fill="#45A9E8"/>
+    <path d="M123 193 C123 187 134 173 134 173 C134 173 145 187 145 193 C145 200 140 205 134 205 C128 205 123 200 123 193 Z" fill="#45A9E8"/>
+    <path d="M153 180 C153 174 164 160 164 160 C164 160 175 174 175 180 C175 187 170 192 164 192 C158 192 153 187 153 180 Z" fill="#45A9E8"/>
+  </g>
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+<title>Go-kart rounding a corner</title>
+<desc>A helmeted driver in a front-facing go-kart rounds a bend beside a red-and-white curb on the right.</desc>
+<rect width="256" height="256" fill="#e9eee9"/>
+<path d="M0 85C57 86 83 39 139 38c48-1 84 23 117 51v167H0Z" fill="#343a40"/>
+<path d="M0 99C49 99 79 54 137 52" fill="none" stroke="#858b8c" stroke-width="3"/>
+<path d="M191 53C224 77 234 111 215 151" fill="none" stroke="#20272b" stroke-width="23" stroke-linecap="round"/>
+<path d="M191 53C224 77 234 111 215 151" fill="none" stroke="#f4f0dc" stroke-width="16" stroke-linecap="butt"/>
+<path d="M191 53C224 77 234 111 215 151" fill="none" stroke="#df443b" stroke-width="16" stroke-dasharray="12 12" stroke-linecap="butt"/>
+<path d="M31 216c28-10 48-11 66-8M187 207c16-5 26-11 35-20" fill="none" stroke="#555d61" stroke-width="3" stroke-linecap="round"/>
+<!-- exposed front tires, angled into the turn -->
+<path d="m53 139 24 5-6 41-25-6Z" fill="#171d20"/>
+<path d="m57 145 14 3-4 29-14-3Z" fill="#454d50"/>
+<path d="m165 144 24-5 8 40-25 6Z" fill="#171d20"/>
+<path d="m171 148 14-3 6 29-14 3Z" fill="#454d50"/>
+<path d="m52 153 17 4m-19 7 17 4m-18 7 16 4m103-26 17-4m-16 12 17-4m-16 12 17-4" fill="none" stroke="#aeb4b1" stroke-width="2" stroke-linecap="round"/>
+<!-- driver and steering wheel -->
+<path d="M93 115c2-13 12-20 28-20s27 8 30 22l-4 25H96Z" fill="#236c79"/>
+<path d="M96 127c9-10 20-14 30-14 10 0 19 4 27 13" fill="none" stroke="#17272c" stroke-width="5" stroke-linecap="round"/>
+<circle cx="121" cy="91" r="24" fill="#f2b93e" stroke="#20272b" stroke-width="4"/>
+<path d="M101 91c1-15 9-23 20-23 12 0 20 8 21 23l-5 5h-31Z" fill="#f2b93e"/>
+<path d="M105 91h32c-1 8-6 12-16 12s-15-4-16-12Z" fill="#20272b"/>
+<path d="M112 87c5-3 13-3 18 0" fill="none" stroke="#fff0b8" stroke-width="3" stroke-linecap="round"/>
+<!-- low chassis and nose -->
+<path d="m91 133 59 0 24 44H72Z" fill="#d94337" stroke="#20272b" stroke-width="4" stroke-linejoin="round"/>
+<path d="m107 138 27 0 15 32H91Z" fill="#f2b93e"/>
+<path d="M65 173c0-4 4-7 9-7h95c5 0 9 3 9 7v9H65Z" fill="#20272b"/>
+<path d="M73 173h97" stroke="#f2b93e" stroke-width="4" stroke-linecap="round"/>
+<path d="M91 147h8m43 0h8" stroke="#fff0b8" stroke-width="3" stroke-linecap="round"/>
+</svg>

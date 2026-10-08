@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <title>Shield with checkmark</title>
+  <path d="M64 12C51 19 39 22 24 24V55C24 79 40 99 64 113C88 99 104 79 104 55V24C89 22 77 19 64 12Z" stroke="#243746" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M45 62L58 75L84 49" stroke="#243746" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

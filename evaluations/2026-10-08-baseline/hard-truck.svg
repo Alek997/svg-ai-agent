@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 250">
+  <title>Blue lightning delivery truck</title>
+  <desc>A small delivery truck facing right with a blue cargo box, white lightning bolt, and two wheels.</desc>
+  <rect x="47" y="65" width="236" height="120" rx="7" fill="#2878d0"/>
+  <path d="M283 106h54l34 24 20 27v28H283z" fill="#e8edf2"/>
+  <path d="M300 115h34l27 20h-61z" fill="#8ec9ef"/>
+  <path d="M369 140l14 19h-14z" fill="#8ec9ef"/>
+  <rect x="37" y="179" width="356" height="13" rx="3" fill="#364451"/>
+  <path d="M166 84h28l-17 31h23l-48 51 13-39h-22z" fill="#ffffff"/>
+  <circle cx="119" cy="190" r="27" fill="#26323d"/>
+  <circle cx="119" cy="190" r="11" fill="#b9c4cc"/>
+  <circle cx="340" cy="190" r="27" fill="#26323d"/>
+  <circle cx="340" cy="190" r="11" fill="#b9c4cc"/>
+</svg>
