@@ -224,6 +224,26 @@ The HTTP streaming adapter additionally enforces its
 Standalone Node runners need `--conditions=react-server` to import `server-only`
 modules (as in `npm test`), plus alias resolution if using `@/` imports.
 
+## Evals and Braintrust
+
+An editable evaluation suite lives in [`evals/`](evals/README.md). Start with
+`npm run eval` to validate the dataset without model calls. To generate, visually
+score, and record one private Braintrust experiment, configure the placeholder
+variables in `.env.example` in your local `.env.local`, then run:
+
+```bash
+npm run eval -- --live --case weather --judge --braintrust --name baseline
+```
+
+Cases are editable JSON, scorer functions are independent of Braintrust, and the
+task reuses production streamed generation. Basic scorers check completion, safe
+SVG, and tool protocol; the optional vision judge checks a fixed requirement
+list. Local results and accepted SVGs are saved to ignored `evaluations/runs/`.
+Tracing is enabled for eval runs only. Tests use mock responses; live fidelity,
+cloud upload, and real experiment traces have not been verified by setup alone.
+Read the [walkthrough](evals/README.md) for each part, extension examples, limits,
+and how to compare experiments.
+
 ## Trust and usage limits
 
 Client history is editable, including forged assistant messages. It is context,

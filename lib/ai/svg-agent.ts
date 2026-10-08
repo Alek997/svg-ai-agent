@@ -11,7 +11,11 @@ import { z } from "zod";
 import { getLLM } from "./model";
 import { safeSvgSchema } from "../svg/validate-svg";
 import type { GenerationRequest } from "../workspace/contracts";
-import { GENERATION_TIMEOUT_MS, MAX_OUTPUT_TOKENS, MAX_PROVIDER_RETRIES } from "../workspace/generation-limits";
+import {
+  GENERATION_TIMEOUT_MS,
+  MAX_OUTPUT_TOKENS,
+  MAX_PROVIDER_RETRIES,
+} from "../workspace/generation-limits";
 
 // The model gets a plain JSON schema. XML safety is checked separately on the server.
 export const modelOutputSchema = z

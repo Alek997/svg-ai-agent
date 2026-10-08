@@ -1,0 +1,111 @@
+[
+  {
+    "id": "magnifying-glass",
+    "tags": ["generation", "easy"],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "A black outlined magnifying glass, centered, on a transparent background."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A recognizable magnifying glass",
+        "Black outline",
+        "Centered composition",
+        "No background shape"
+      ]
+    }
+  },
+  {
+    "id": "folder-star",
+    "tags": ["generation", "easy"],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "A blue folder icon with a small white star in the center."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A recognizable blue folder",
+        "A small white star",
+        "The star is centered on the folder"
+      ]
+    }
+  },
+  {
+    "id": "weather",
+    "tags": ["generation", "counting", "medium"],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "A circular weather icon showing a yellow sun partly hidden behind a white cloud, with exactly three blue raindrops below."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "Circular weather icon",
+        "Yellow sun partly hidden behind a white cloud",
+        "Exactly three blue raindrops",
+        "Raindrops are below the cloud"
+      ]
+    }
+  },
+  {
+    "id": "truck",
+    "tags": ["generation", "spatial", "hard"],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "A small delivery truck facing right, with two wheels, a blue cargo box, and a white lightning bolt on the cargo box."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "Recognizable delivery truck",
+        "Cab faces the viewer's right",
+        "Exactly two visible wheels",
+        "Blue cargo box",
+        "White lightning bolt on the cargo box"
+      ]
+    }
+  },
+  {
+    "id": "edit-circle",
+    "tags": ["edit", "preservation", "easy"],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a blue circle on the left and an orange square on the right, on a transparent background."
+        },
+        {
+          "role": "assistant",
+          "content": "Created a blue circle and an orange square."
+        },
+        {
+          "role": "user",
+          "content": "Make only the circle red. Keep its position and size, and leave the square unchanged."
+        }
+      ],
+      "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\"><circle cx=\"50\" cy=\"50\" r=\"30\" fill=\"blue\"/><rect x=\"120\" y=\"20\" width=\"60\" height=\"60\" fill=\"orange\"/></svg>"
+    },
+    "expected": {
+      "requirements": [
+        "The circle is red",
+        "The circle keeps its original position and size",
+        "The orange square is unchanged",
+        "No background shape or additional objects"
+      ]
+    }
+  }
+]
