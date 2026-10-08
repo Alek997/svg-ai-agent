@@ -79,7 +79,7 @@ export function SvgWorkspace() {
           name: "draft.svg", description: "SVG in progress", ...event.svg,
         });
         if (event.type === "activity") setActivity(
-          `Step ${event.step}/6 · ${event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
+          `Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
         );
         if (event.type === "progress") setProgress(event.characters);
         if (event.type === "result") {

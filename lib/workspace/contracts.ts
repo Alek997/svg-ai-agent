@@ -58,14 +58,34 @@ export type GenerationUsage = z.infer<typeof generationUsageSchema>;
 
 export const previewSvgSchema = svgDocumentSchema.pick({ source: true, width: true, height: true });
 
-// Only our SVG tools' bounded inputs/results cross the browser boundary.
+export const searchInputSchema = z.object({
+  query: z.string().trim().min(1).max(400),
+  timeRange: z.enum(["day", "week", "month", "year"]).optional(),
+}).strict();
+
+export const searchSourceSchema = z.object({
+  title: z.string().min(1).max(200),
+  url: z.string().url().max(2000).refine(value => {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+  }, "Source must be an HTTP(S) URL without credentials."),
+  content: z.string().max(1500),
+}).strict();
+
+export const searchOutputSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), query: z.string().max(400), results: z.array(searchSourceSchema).max(5) }).strict(),
+  z.object({ ok: z.literal(false), error: z.string().max(500) }).strict(),
+]);
+
+// Only server-owned tools' bounded inputs/results cross the browser boundary.
 export const toolTraceSchema = z.object({
   id: z.string().min(1).max(200),
-  name: z.enum(["querySvg", "validateSvg"]),
+  name: z.enum(["querySvg", "validateSvg", "webSearch"]),
   step: z.number().int().min(1).max(6),
   status: z.enum(["pending", "running", "completed", "error"]),
-  input: z.object({ svg: z.string().max(MAX_SVG_LENGTH).optional() }).strict().optional(),
+  input: z.union([z.object({ svg: z.string().max(MAX_SVG_LENGTH).optional() }).strict(), searchInputSchema]).optional(),
   output: z.union([
+    searchOutputSchema,
     z.object({ source: z.string().max(MAX_SVG_LENGTH).nullable(), version: z.number().int().nonnegative() }).strict(),
     z.object({ valid: z.literal(true), version: z.number().int().nonnegative(), width: z.number().positive(), height: z.number().positive() }).strict(),
     z.object({ valid: z.literal(false), error: z.string().max(1000) }).strict(),
@@ -89,7 +109,7 @@ export const generationEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("activity"),
     step: z.number().int().min(1).max(6),
-    action: z.enum(["working", "querySvg", "validateSvg"]),
+    action: z.enum(["working", "querySvg", "validateSvg", "webSearch"]),
   }).strict(),
   z
     .object({

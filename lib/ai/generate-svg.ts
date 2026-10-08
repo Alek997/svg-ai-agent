@@ -3,6 +3,7 @@ import "server-only";
 import type { LanguageModel } from "ai";
 import { buildSvgMessages, createSvgAgent } from "./svg-agent";
 import { getLLM } from "./model";
+import { createWebSearch } from "./web-search";
 import { summarizeUsage } from "./usage";
 import type { GenerateSvg } from "./handle-generation";
 import { toolTraceSchema } from "../workspace/contracts";
@@ -15,8 +16,9 @@ export async function generateSvg(
   onProgress: (characters: number) => void,
   model: LanguageModel = getLLM(),
   onEvent?: (event: GenerationEvent) => void,
+  search = createWebSearch(),
 ): ReturnType<GenerateSvg> {
-  const agent = createSvgAgent(model, input.currentSvg);
+  const agent = createSvgAgent(model, input.currentSvg, search);
   const result = await agent.stream({
     messages: buildSvgMessages(input),
     abortSignal: signal,
@@ -60,7 +62,7 @@ export async function generateSvg(
     }
     if (part.type === "tool-input-start") {
       toolInputs.set(part.id, { name: part.toolName, text: "" });
-      if (part.toolName === "querySvg" || part.toolName === "validateSvg") {
+      if (part.toolName === "querySvg" || part.toolName === "validateSvg" || part.toolName === "webSearch") {
         onEvent?.({ type: "activity", step, action: part.toolName });
         onEvent?.({ type: "tool", call: { id: part.id, name: part.toolName, step, status: "pending" } });
       }
@@ -80,7 +82,7 @@ export async function generateSvg(
     }
     if (part.type === "tool-call") stepTools.push(part.toolName);
     if (part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-error") {
-      if (part.toolName === "querySvg" || part.toolName === "validateSvg") {
+      if (part.toolName === "querySvg" || part.toolName === "validateSvg" || part.toolName === "webSearch") {
         const parsed = toolTraceSchema.safeParse({
           id: part.toolCallId, name: part.toolName, step,
           status: part.type === "tool-call" ? "running" : part.type === "tool-result" ? "completed" : "error",

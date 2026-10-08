@@ -8,6 +8,10 @@ Sending a chat message makes `POST /api/generate` with user/assistant history
 and, for edits, the current validated SVG. A server-only AI SDK `ToolLoopAgent`
 can work across up to six model steps per request:
 
+- `webSearch` looks up a subject through Tavily only when the model does not know
+  or understand what the user is asking for. Understood requests go directly to
+  drawing; being recent, niche, or a meme does not itself trigger search.
+  Search results become context for the next model step.
 - `querySvg` retrieves current SVG code and a request-local revision counter.
   The source is available through the tool instead of being inserted into the
   initial model prompt on every turn. Tool results still consume input tokens.
@@ -44,7 +48,7 @@ failed requests retain the partial timeline and final error. Private model reaso
 not exposed. Existing tool-only records remain available, but older unrecorded
 model steps cannot be reconstructed.
 These display records are retained in browser memory with the reply and are not
-included in subsequent model message history. Only the server-owned SVG tools'
+included in subsequent model message history. Only the server-owned tools'
 bounded inputs/results are forwarded; raw provider errors are never shown.
 Temporary previews are separate from the saved document. Download and copy are
 disabled during generation; only a complete validated result replaces the saved
@@ -93,6 +97,67 @@ The connected development instance was verified to have email/password, Google,
 and GitHub enabled with Waitlist mode. These settings live in Clerk, not Git.
 Keep Email enabled for verification and invitation delivery.
 
+## Reference search
+
+`lib/ai/web-search.ts` wraps Tavily's Search API as an AI SDK tool using native
+`fetch`, with no additional dependency. Only when the model does not understand
+the requested subject does it choose a short query focused on identifying visual
+features. It may set a day/week/month/year filter when recency matters.
+The server fixes `topic=general`, `search_depth=basic`, `auto_parameters=false`,
+five results, and two snippets per source; it does not request generated answers,
+raw pages, or images. Searches are capped at two attempts per generation (including
+failed and parallel calls), with no automatic retries, a ten-second deadline per
+call, shared request cancellation, and a 100 KB response cap. After two attempts
+the tool is removed from the remaining model steps. The overall six-step budget
+still applies, so search leaves fewer steps for drawing and repair.
+
+Results are validated, deduplicated and reduced to HTTP(S) source URLs without
+credentials, titles up to 200 characters, and snippets up to 1500 characters.
+The browser shows “Searching for references…” while the tool runs, then clickable
+source links and plain-text snippets in the reply's Details timeline. Empty
+results and safe errors appear there too. Provider bodies, credentials and raw
+errors are never forwarded. Retrieved text remains untrusted context; it cannot
+change tool permissions or SVG safety rules. SVGs still cannot embed remote assets.
+
+This extends the existing agent loop: the model chooses a tool, sees its results,
+then generates and validates the artwork. It does not add a separate research
+agent or search every prompt. Search currently provides **text grounding**, not
+image inspection; descriptions can help identify an obscure reference without
+guaranteeing its visual likeness. Search selection depends on the model recognizing
+that it does not understand the subject; this prompt-level rule is not a
+server-enforced measurement of the model's knowledge.
+
+Provider decision (October 9, 2026): [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+offers bounded snippets and date filters with a separate tool execution budget.
+[Tavily pricing](https://docs.tavily.com/documentation/api-credits) lists 1000 free
+credits/month and $0.008/credit pay-as-you-go; basic search costs one credit,
+so two searches cost at most $0.016 at that rate, plus model tokens.
+[OpenAI hosted search](https://developers.openai.com/api/docs/guides/tools-web-search)
+would reuse the OpenAI key and is an alternative with provider-managed execution.
+[Exa](https://exa.ai/docs/admin/pricing) offers real-time search, with instant
+search starting at $4/1000 requests. No comparative relevance benchmark has been
+run; Tavily was chosen for explicit per-request controls and the user's familiarity,
+not a demonstrated advantage on memes. Compare providers on named-reference
+prompts before changing the default.
+
+Automated search tests mock Tavily and model responses to check budgets,
+cancellation, unsafe URLs, response bounds, error redaction, and search → model
+context → validation → final SVG. They do not establish live search relevance or
+visual fidelity. Configure `TAVILY_API_KEY` on Vercel too when enabling search
+there; token usage reporting excludes Tavily credits.
+
+Verification on October 9, 2026: 84 automated tests passed, along with lint and
+the production Webpack build (`npm run build -- --webpack`). The default
+Turbopack build hit a local port-binding restriction in this execution environment.
+Browser checks used actual workspace components with mocked API events to verify
+search loading, clickable sources, escaped snippets, search failure, and retention
+of saved artwork on invalid output. A separate live Tavily lookup and live agent
+run using the locally configured `gpt-6-luna` completed in about 27 seconds:
+one search, one rejected SVG attribute (`role`), successful repair/validation,
+and a final beach illustration with a shark, three legs and blue sneakers.
+This is one smoke check, not a comparative fidelity evaluation or verification
+against a reference image. The default model remains `gpt-4.1-mini`.
+
 ## Local setup
 
 Use Node.js 22 LTS and npm.
@@ -108,6 +173,12 @@ or run `clerk auth login` then `clerk init --app <your-app-id>`. Never paste sec
 keys into chat, expose them with `NEXT_PUBLIC_`, or commit them. Only Clerk’s
 publishable key belongs in `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. `OPENAI_MODEL` is optional and defaults to
 `gpt-4.1-mini`. Restart the dev server after changing environment settings.
+
+For web search, set the optional server-only `TAVILY_API_KEY` in `.env.local`.
+Without it, ordinary generation still works; a requested search returns a clear
+configuration error to the agent and Details. Never prefix this key with
+`NEXT_PUBLIC_`. Search queries chosen by the model are sent to Tavily; the API key
+is used only for server authentication.
 
 ```bash
 npm run dev
@@ -142,6 +213,7 @@ Components; interactive components use `use client`.
 - `lib/workspace/flow.ts`: preserves chronological event order for the conversation timeline.
 - `lib/workspace/types.ts`, `sample.ts`: inferred UI types and authored sample.
 - `lib/ai/model.ts`: server-only environment validation and model configuration.
+- `lib/ai/web-search.ts`: server-only Tavily tool with request-local budgets and bounded source results.
 - `lib/ai/svg-agent.ts`: server-only reusable agent factory, instructions, model
   output schema, request-local tools, step/token/retry limits, and conversation preparation.
 - `lib/ai/usage.ts`: converts SDK token usage to explicit, nullable UI counts.

@@ -14,7 +14,17 @@ function FlowPart({ entry }: { entry: FlowEntry }) {
     case "tool": return <>
       <p className="text-stone-500">Step {entry.call.step} · {entry.call.status === "pending" ? "Preparing tool" : entry.call.status === "running" ? "Tool call" : "Tool result"} · {entry.call.name}</p>
       {entry.call.input && <Payload value={entry.call.input} />}
-      {entry.call.output && <Payload value={entry.call.output} />}
+      {entry.call.output && ("ok" in entry.call.output
+        ? entry.call.output.ok
+          ? <div className="mt-1 space-y-2">
+              {!entry.call.output.results.length && <p>No matching sources found.</p>}
+              {entry.call.output.results.map(source => <div key={source.url}>
+                <a href={source.url} target="_blank" rel="noopener noreferrer" className="break-words text-stone-600 underline underline-offset-2">{source.title}</a>
+                <p className="mt-1 whitespace-pre-wrap break-words text-stone-500">{source.content}</p>
+              </div>)}
+            </div>
+          : <p className="mt-1 text-amber-700">{entry.call.output.error}</p>
+        : <Payload value={entry.call.output} />)}
       {entry.call.error && <p className="mt-1 text-red-700">{entry.call.error}</p>}
     </>;
     case "response": return <>

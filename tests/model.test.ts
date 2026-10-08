@@ -4,6 +4,7 @@ import { APICallError, RetryError } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { generateSvg } from "../lib/ai/generate-svg";
 import { buildSvgMessages, createSvgAgent } from "../lib/ai/svg-agent";
+import { createWebSearch } from "../lib/ai/web-search";
 
 const output = {
   message: "Created a blue circle.",
@@ -239,6 +240,47 @@ function toolStep(name: string, args: unknown, id: string) {
   };
 }
 
+test("agent searches, uses returned context, validates SVG and streams clickable source records", async () => {
+  let turn = 0;
+  const source = { title: "New character", url: "https://example.com/reference", content: "A blue circle character with a red hat." };
+  const search = createWebSearch({ apiKey: "test-key", fetcher: async () => Response.json({ results: [source] }) });
+  const model = new MockLanguageModelV4({ doStream: async () => {
+    switch (turn++) {
+      case 0: return toolStep("webSearch", { query: "new character appearance" }, "search");
+      case 1: return toolStep("validateSvg", { svg: output.svg }, "validate");
+      default: return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
+    }
+  } });
+  const events: import("../lib/workspace/contracts").GenerationEvent[] = [];
+  const result = await generateSvg(
+    { messages: [{ role: "user", content: "Draw an unfamiliar character called Zorbimble" }] },
+    new AbortController().signal, () => {}, model, event => events.push(event), search,
+  );
+  assert.deepEqual(result.output, output);
+  assert.match(JSON.stringify(model.doStreamCalls[1].prompt), /red hat/);
+  assert.ok(events.some(event => event.type === "activity" && event.action === "webSearch"));
+  const traces = events.flatMap(event => event.type === "tool" && event.call.name === "webSearch" ? [event.call] : []);
+  assert.deepEqual(traces.map(call => call.status), ["pending", "running", "completed"]);
+  assert.deepEqual(traces.at(-1)?.output, { ok: true, query: "new character appearance", results: [source] });
+  assert.doesNotMatch(JSON.stringify(events), /test-key/);
+});
+
+test("agent removes search after two attempts while retaining validation tools", async () => {
+  let turn = 0;
+  const search = createWebSearch({ apiKey: "test-key", fetcher: async () => Response.json({ results: [] }) });
+  const model = new MockLanguageModelV4({ doStream: async () => {
+    const current = turn++;
+    if (current < 2) return toolStep("webSearch", { query: "unknown reference" }, `search-${current}`);
+    if (current === 2) return toolStep("validateSvg", { svg: output.svg }, "validate");
+    return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
+  } });
+  await generateSvg({ messages: [{ role: "user", content: "Draw unknown reference" }] }, new AbortController().signal, () => {}, model, undefined, search);
+  const names = (index: number) => model.doStreamCalls[index].tools?.map(tool => tool.name);
+  assert.ok(names(0)?.includes("webSearch"));
+  assert.ok(names(1)?.includes("webSearch"));
+  assert.deepEqual(names(2), ["querySvg", "validateSvg"]);
+});
+
 test("agent queries current artwork, receives validation failure, repairs and completes across steps", async () => {
   let call = 0;
   const model = new MockLanguageModelV4({
@@ -274,7 +316,9 @@ test("agent queries current artwork, receives validation failure, repairs and co
   const traces = events.flatMap(e => e.type === "tool" ? [e.call] : []);
   assert.deepEqual(traces.filter(call => call.status === "completed").map(call => call.name), ["querySvg", "validateSvg", "validateSvg"]);
   assert.deepEqual(traces.find(call => call.id === "query" && call.status === "completed")?.output, { source: output.svg, version: 0 });
-  assert.equal(traces.find(call => call.id === "valid" && call.status === "running")?.input?.svg, output.svg);
+  const validationInput = traces.find(call => call.id === "valid" && call.status === "running")?.input;
+  assert.ok(validationInput && "svg" in validationInput);
+  assert.equal(validationInput.svg, output.svg);
   const rejected = traces.find(call => call.id === "invalid" && call.status === "completed")?.output;
   assert.ok(rejected && "valid" in rejected && !rejected.valid);
   assert.match(rejected.error, /script/);
