@@ -103,6 +103,11 @@ export const stepTraceSchema = z.object({
 export type StepTrace = z.infer<typeof stepTraceSchema>;
 
 export const generationEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("reply"),
+    reason: z.enum(["conversation", "clarification"]),
+    message: z.string().trim().min(1).max(2000),
+  }).strict(),
   z.object({ type: z.literal("response"), step: z.number().int().min(1).max(6), text: z.string().max(2000) }).strict(),
   z.object({ type: z.literal("step"), detail: stepTraceSchema }).strict(),
   z.object({ type: z.literal("tool"), call: toolTraceSchema }).strict(),

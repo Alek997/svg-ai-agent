@@ -95,6 +95,10 @@ export function createGenerationObserver(span: Pick<Span, "id" | "log" | "end">,
             ...(event.usage.totalTokens !== null ? { tokens: event.usage.totalTokens } : {}),
           } });
         }
+        if (event.type === "reply") {
+          status = "completed";
+          span.log({ output: { message: event.message }, metadata: { outcome: event.reason } });
+        }
         if (event.type === "error") {
           status = "error";
           span.log({ error: event.message });

@@ -94,7 +94,7 @@ test("generation trace contains final validated SVG, history, tool results and t
     event?.({ type: "tool", call: { id: "call-1", name: "webSearch", step: 1, status: "running", input: { query: "circle" } } });
     event?.({ type: "tool", call: { id: "call-1", name: "webSearch", step: 1, status: "completed", output: { ok: true, query: "circle", results: [] } } });
     return generated;
-  }, undefined, async () => {}, value => createGenerationObserver(span, value, user, secret));
+  }, undefined, async () => ({ kind: "generation" as const }), value => createGenerationObserver(span, value, user, secret));
   const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
   const result = events.at(-1);
   assert.equal(result.type, "result");
@@ -120,16 +120,40 @@ test("generation trace contains final validated SVG, history, tool results and t
 
 test("unsafe generation records failure and never issues feedback permission", async () => {
   const span = fakeSpan();
-  const response = await handleGeneration(request(input, "generate"), async () => ({ ...generated, output: { ...generated.output, svg: '<svg><script>alert(1)</script></svg>' } }), undefined, async () => {}, value => createGenerationObserver(span, value, user, secret));
+  const response = await handleGeneration(request(input, "generate"), async () => ({ ...generated, output: { ...generated.output, svg: '<svg><script>alert(1)</script></svg>' } }), undefined, async () => ({ kind: "generation" as const }), value => createGenerationObserver(span, value, user, secret));
   const body = await response.text();
   assert.equal(body.includes("feedbackToken"), false);
   assert.equal(span.records.some(row => row.output), false);
   assert.equal((span.records.at(-1)?.metadata as { status: string }).status, "error");
 });
 
+test("conversational turns finish tracking without artwork or feedback permission", async () => {
+  const span = fakeSpan();
+  const response = await handleGeneration(request(input, "generate"), async () => { throw new Error("Must not generate"); }, undefined,
+    async () => ({ kind: "reply", reason: "conversation", message: "You’re welcome!" }),
+    value => createGenerationObserver(span, value, user, secret));
+  assert.deepEqual(JSON.parse(await response.text()), { type: "reply", reason: "conversation", message: "You’re welcome!" });
+  assert.deepEqual(span.records.find(row => row.output)?.output, { message: "You’re welcome!" });
+  assert.equal((span.records.at(-1)?.metadata as { status: string }).status, "completed");
+  assert.equal(span.ended, 1);
+});
+
+for (const changed of [false, true]) {
+  test(`feedback permission requires changed artwork: ${changed}`, async () => {
+    const span = fakeSpan();
+    const currentSvg = changed ? svg.replace('fill="blue"', 'fill="red"') : svg;
+    const response = await handleGeneration(request({ ...input, currentSvg }, "generate"), async () => generated, undefined,
+      async () => ({ kind: "generation" }), value => createGenerationObserver(span, value, user, secret));
+    const result = JSON.parse((await response.text()).trim().split("\n").at(-1)!);
+    assert.equal(result.type, "result");
+    assert.equal(Boolean(result.feedbackToken), changed);
+    assert.equal(result.document.source, svg);
+  });
+}
+
 test("tracking failure does not break generation, and disabled tracking has no feedback token", async () => {
   const observer = createGenerationObserver({ id, log() { throw new Error("unavailable"); }, end() { throw new Error("unavailable"); } }, input, user);
-  const response = await handleGeneration(request(input, "generate"), async () => generated, undefined, async () => {}, () => observer);
+  const response = await handleGeneration(request(input, "generate"), async () => generated, undefined, async () => ({ kind: "generation" as const }), () => observer);
   const body = await response.text();
   assert.equal(body.includes('"type":"result"'), true);
   assert.equal(body.includes("feedbackToken"), false);

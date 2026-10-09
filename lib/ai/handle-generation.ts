@@ -12,7 +12,7 @@ import {
 } from "../workspace/contracts";
 import { safeSvgSchema } from "../svg/validate-svg";
 import { GENERATION_TIMEOUT_MS } from "../workspace/generation-limits";
-import { checkGenerationPolicy, InputPolicyError } from "./input-policy";
+import { checkGenerationPolicy, InputPolicyError, type PolicyOutcome } from "./input-policy";
 
 const resultSchema = z
   .object({
@@ -102,7 +102,7 @@ export async function handleGeneration(
   request: Request,
   generate: GenerateSvg,
   timeoutMs = GENERATION_TIMEOUT_MS,
-  checkPolicy: (input: GenerationRequest, signal: AbortSignal) => Promise<void> = checkGenerationPolicy,
+  checkPolicy: (input: GenerationRequest, signal: AbortSignal) => Promise<PolicyOutcome> = checkGenerationPolicy,
   observe?: (input: GenerationRequest) => GenerationObserver | undefined,
 ) {
   let input: GenerationRequest;
@@ -126,8 +126,24 @@ export async function handleGeneration(
   // Gate before starting the stream: denied requests cannot run tools or emit drafts.
   // The same overall deadline includes policy checks and generation.
   try {
-    await checkPolicy(input, signal);
+    const outcome = await checkPolicy(input, signal);
     signal.throwIfAborted();
+    if (outcome.kind === "reply") {
+      const event = generationEventSchema.parse({ type: "reply", reason: outcome.reason, message: outcome.message });
+      observer?.event(event);
+      observer?.finish();
+      clearTimeout(timeout);
+      cancellation.abort();
+      // A terminal text reply uses the same transport, with no generation,
+      // previews, document, usage claims or feedback permission.
+      return new Response(`${JSON.stringify(event)}\n`, {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
   } catch (error) {
     clearTimeout(timeout);
     cancellation.abort();
@@ -177,11 +193,13 @@ export async function handleGeneration(
               "The model returned invalid or unsafe SVG. Try a simpler description.",
           });
         } else {
+          const changed = result.data.svg.source !== input.currentSvg;
+          const feedbackToken = changed ? observer?.feedbackToken() : undefined;
           send({
             type: "result",
             message: result.data.message,
             usage: generationUsageSchema.parse(raw.usage),
-            ...(observer?.feedbackToken() ? { feedbackToken: observer.feedbackToken() } : {}),
+            ...(feedbackToken ? { feedbackToken } : {}),
             document: {
               name: result.data.filename,
               description: result.data.message.slice(0, 1000),

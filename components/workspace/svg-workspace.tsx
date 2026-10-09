@@ -25,6 +25,7 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
   const [messages, setMessages] = useState<ChatMessage[]>([welcome]);
   const [document, setDocument] = useState<SvgDocument | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [preview, setPreview] = useState<SvgDocument | null>(null);
   const [activity, setActivity] = useState("Starting generation…");
   const [progress, setProgress] = useState(0);
@@ -80,6 +81,7 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
     retryAvailableAt.current = 0;
     setRetrySeconds(0);
     setIsLoading(true);
+    setIsGenerating(false);
     setProgress(0);
     setPreview(null);
     setActivity("Checking your request…");
@@ -88,7 +90,7 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
     try {
       await requestGeneration(input, controller.signal, (event) => {
         if (activeRequest.current !== controller) return;
-        if (event.type !== "activity" && event.type !== "progress") {
+        if (event.type !== "activity" && event.type !== "progress" && event.type !== "reply") {
           setMessages(previous => previous.map(message => message.id === replyId
             ? { ...message, flow: recordFlowEvent(message.flow ?? [], event) }
             : message));
@@ -119,7 +121,17 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
         if (event.type === "activity") setActivity(
           `Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
         );
-        if (event.type === "progress") setProgress(event.characters);
+        if (event.type === "progress") {
+          setIsGenerating(true);
+          setProgress(event.characters);
+          setActivity(previous => previous === "Checking your request…" ? "Starting generation…" : previous);
+        }
+        if (event.type === "reply") {
+          setMessages(previous => previous.map(message => message.id === replyId
+            ? { ...message, content: event.message, runStatus: "completed" }
+            : message));
+          setRetryInput(null);
+        }
         if (event.type === "result") {
           setDocument(event.document);
           setPreview(null);
@@ -157,6 +169,7 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
       if (activeRequest.current === controller) {
         activeRequest.current = null;
         setIsLoading(false);
+        setIsGenerating(false);
         setPreview(null);
         setMessages(previous => previous.map(message => message.id === replyId ? {
           ...message,
@@ -207,6 +220,7 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
     setDocument(null);
     setPreview(null);
     setIsLoading(false);
+    setIsGenerating(false);
     setError(null);
     setProgress(0);
     setConversation((value) => value + 1);
@@ -219,7 +233,7 @@ export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: bo
         hasPreview={!!preview}
         activity={activity}
         isSample={!document}
-        isLoading={isLoading}
+        isLoading={isGenerating}
       />
       <ChatPanel
         key={conversation}

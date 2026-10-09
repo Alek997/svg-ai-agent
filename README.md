@@ -6,8 +6,12 @@ Turn a text prompt into a clean SVG, with a browser preview and conversation sid
 
 Sending a chat message makes `POST /api/generate` with user/assistant history
 and, for edits, the current validated SVG. After sign-in and request validation,
-server-side input policy checks must pass before streaming or tools start (see
-the policy section below). A server-only AI SDK `ToolLoopAgent`
+server-side input policy checks classify the turn before streaming or tools start (see
+the policy section below). Greetings, thanks, farewells and neutral acknowledgements
+receive a short text-only reply through the same endpoint. Unclear artwork requests
+receive a clarification question. These turns preserve the current SVG and download,
+show checking activity only in chat, and never run the drawing agent, emit previews
+or offer feedback. Only actionable artwork requests reach a server-only AI SDK `ToolLoopAgent`
 can work across up to six model steps per request:
 
 - `webSearch` looks up a subject through Tavily only when the model does not know
@@ -282,7 +286,11 @@ SVG Studio permits family-friendly icons, logos, illustrations, visual diagrams,
 and edits, including contextual follow-ups and short labels belonging in artwork.
 It rejects unrelated Q&A, essays, translations and programming tasks, including
 attempts to wrap unrelated answers in SVG text, metadata or paths. Mixed requests
-containing unrelated tasks are rejected; unclear visual requests ask for clarification.
+containing unrelated tasks are rejected; unclear visual requests ask for clarification
+in chat without a generation error. Pure social messages are supported too. An actionable
+artwork request takes priority over social wording: “Thanks! Make it blue” still edits,
+while “thanks, it looks nice” leaves the artwork alone. Greetings attached to unrelated
+questions or bypass attempts do not make those requests in scope.
 
 The content policy focuses on serious harmful content: sexual exploitation and sexual
 content involving minors; explicit sexual activity or pornography; terrorist or violent
@@ -311,8 +319,11 @@ Every valid generation request passes these checks before any stream is returned
    the native Decisions API. Independent scope and product-content questions
    classify the latest message using the last four preceding messages, labeled
    untrusted, plus whether artwork exists. SVG source is not sent to the checker.
-   Scope returns `allow`, `reject` or `clarify`; content returns `allow` or `reject`.
-   Both must allow generation. No confidence cutoff is invented before calibration.
+   Scope returns `allow`, `reject`, `clarify`, `greeting`, `thanks`, `farewell` or
+   `acknowledge`; content returns `allow` or `reject`. Content must allow before any
+   reply or generation. Only scope `allow` starts generation; social categories select
+   server-owned replies, and `clarify` asks a question suited to artwork presence.
+   No confidence cutoff is invented before calibration.
 
 There is no keyword blacklist: words such as “suicide” or “terrorism” can appear in
 legitimate prevention artwork, and profanity alone does not trigger a local rejection.
@@ -323,9 +334,11 @@ refusals or malformed results fail closed with a generic 503; raw provider error
 prompts, credentials and classification responses are not exposed or logged.
 Selected moderation categories reject before Decisions.
 
-The UI displays “Checking your request…” during the gate. A rejected or ambiguous
-prompt remains visible but is omitted from subsequent requests, so a safe next
-message can proceed. The previous completed artwork is retained. No retry button
+The UI displays “Checking your request…” in chat during the gate; the canvas does
+not show a generation loader or disable download until generation actually starts.
+A rejected prompt remains visible but is omitted from subsequent requests, so a safe
+next message can proceed. Clarification and social turns stay in conversation history,
+so the next answer can refer to them. The previous completed artwork is retained. No retry button
 is shown for 422; temporary failures remain retryable. These client behaviors are
 for recovery and do not establish trust on the server.
 
@@ -477,7 +490,12 @@ optional reason for negative ratings. Sending feedback calls authenticated
 and reason on the matching generation row through `logFeedback()`. A signed token
 binds that row to its original Clerk user and expires after seven days. Modifying
 the token, changing users, or rotating the signing secret invalidates it without
-requiring a database. Feedback is only offered for complete validated results.
+requiring a database. Feedback is only offered for complete validated results whose
+SVG source differs from the submitted current artwork (or when creating the first SVG).
+A quiet “Rate this SVG” row with thumbs up/down stays beneath that artwork response;
+optional comment/reason fields open after selecting a rating. Social replies, clarification,
+errors and unchanged results never receive feedback tokens or new rating controls.
+Previous artwork responses retain their own controls when more chat messages arrive.
 The UI disables repeat sends after success; resubmitting via the API updates the
 same rating rather than preserving every submission. This is not a quota system.
 
@@ -553,6 +571,31 @@ validates the server response contract; the authoritative SVG safety check runs
 on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
+
+For the October 9, 2026 conversational routing change, 140 mocked tests, lint and
+`npm run build -- --webpack` passed, including TypeScript. The default build was
+attempted but failed fetching the existing Google Fonts in the sandbox. The Webpack
+build succeeded with network access. Native Decisions transport tests cover all
+seven scope options and require a full probability distribution for those choices.
+
+Routing uses the existing choice classifier ([OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions),
+[AI SDK decide](https://ai-sdk.dev/docs/reference/ai-sdk-core/decide)), with no new
+model call or dependency. Decisions chooses a category rather than composing prose;
+server-owned replies keep casual turns bounded and unable to call tools. Replies are
+fixed English phrases in this first version, even for social messages recognized in
+other languages. Social turns still incur the existing moderation/classification
+checks and count toward conversation limits; they do not incur SVG agent usage.
+No live classification evaluation was run for this change; mocked cases verify
+routing, not whether the model reliably interprets every phrasing or mixed request.
+Browser verification used copied workspace components and the actual HTTP handler
+with mocked policy and generation providers in a temporary localhost harness. Checked
+casual replies and clarification, no canvas generation loader during classification,
+retained image/download during thanks, mixed thanks/edit generation loading, separate
+feedback for the edited SVG, optional rating form and successful submission, no new
+feedback on unchanged output, and retained validated SVG on invalid output or temporary
+classifier failure. Downloaded contents matched the retained blue SVG. The harness
+added no production route or authentication bypass and made no live model calls.
+
 
 The Retry button cooldown was verified in an isolated browser fixture with mocked
 503 and 422 responses: disabled countdown, re-enabling after expiry, restart after

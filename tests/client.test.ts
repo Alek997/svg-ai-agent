@@ -17,6 +17,31 @@ const result: GenerationEvent = {
 };
 const input = { messages: [{ role: "user" as const, content: "Draw a café" }] };
 
+test("client accepts a terminal conversational reply without an SVG", async context => {
+  const reply = { type: "reply", reason: "conversation", message: "You’re welcome!" };
+  context.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify(reply) + "\n", {
+    headers: { "Content-Type": "application/x-ndjson" },
+  }));
+  const events: GenerationEvent[] = [];
+  await requestGeneration(input, new AbortController().signal, event => events.push(event));
+  assert.deepEqual(events, [reply]);
+});
+
+test("client rejects artwork or feedback attached to a conversational reply", async context => {
+  context.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({
+    type: "reply", reason: "conversation", message: "Hello", document: result.document, feedbackToken: "bad",
+  }) + "\n", { headers: { "Content-Type": "application/x-ndjson" } }));
+  await assert.rejects(() => requestGeneration(input, new AbortController().signal, () => {}));
+});
+
+test("client rejects extra events after a terminal reply", async context => {
+  context.mock.method(globalThis, "fetch", async () => new Response(
+    JSON.stringify({ type: "reply", reason: "conversation", message: "Hello" }) + "\n" + JSON.stringify(result) + "\n",
+    { headers: { "Content-Type": "application/x-ndjson" } },
+  ));
+  await assert.rejects(() => requestGeneration(input, new AbortController().signal, () => {}), /after generation finished/);
+});
+
 test("client distinguishes policy rejection from temporary check failure", async context => {
   for (const status of [422, 503]) {
     context.mock.method(globalThis, "fetch", async () => Response.json({ error: "Safe message" }, { status }));

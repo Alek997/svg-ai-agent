@@ -12,7 +12,7 @@ import { safeSvgSchema } from "../lib/svg/validate-svg";
 
 // Transport/SVG tests isolate the gate; dedicated policy tests mock its providers.
 const handleGeneration: typeof handleWithPolicy = (request, generate, timeout, check) =>
-  handleWithPolicy(request, generate, timeout, check ?? (async () => {}));
+  handleWithPolicy(request, generate, timeout, check ?? (async () => ({ kind: "generation" as const })));
 
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="blue"/></svg>';

@@ -38,12 +38,13 @@ export function GenerationFeedback({ token }: { token: string }) {
   return (
     <form onSubmit={submit} className="mt-3 space-y-2 text-xs text-stone-600">
       <fieldset disabled={status === "saving"} className="space-y-2">
-        <legend className="mb-2">How was this generation?</legend>
-        <div className="flex gap-2">
+        <legend className="sr-only">Rate this SVG (optional)</legend>
+        <div className="flex items-center gap-1 text-stone-400">
+          <span className="mr-1">Rate this SVG</span>
           {([1, 0] as const).map(value => (
             <button key={value} type="button" aria-label={value === 1 ? "Good generation" : "Poor generation"} aria-pressed={rating === value}
               onClick={() => { setRating(value); setStatus("idle"); }}
-              className={`rounded-md border px-3 py-1.5 disabled:opacity-50 ${rating === value ? "border-stone-700 bg-stone-100" : "border-stone-200 hover:bg-stone-50"}`}>
+              className={`rounded-md px-2 py-1 disabled:opacity-50 ${rating === value ? "bg-stone-100 text-stone-700" : "hover:bg-stone-50 hover:text-stone-600"}`}>
               <span aria-hidden="true">{value === 1 ? "👍" : "👎"}</span>
             </button>
           ))}

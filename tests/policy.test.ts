@@ -46,6 +46,51 @@ test("allowed requests run moderation then classification", async () => {
   assert.deepEqual(calls, ["moderate", "classify"]);
 });
 
+for (const [choice, text, expected] of [
+  ["greeting", "Hello!", /Hi/],
+  ["thanks", "Thanks, it looks nice", /welcome/],
+  ["thanks", "Hvala, izgleda lepo", /welcome/],
+  ["farewell", "Goodbye", /Goodbye/],
+  ["acknowledge", "Okay", /Got it/],
+  ["clarify", "Something feels off", /change/],
+] as const) {
+  test(`${choice} returns a text-only reply after both safety checks`, async () => {
+    const requestInput = { messages: [{ role: "user" as const, content: text }], currentSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"/>' };
+    const order: string[] = [];
+    const response = await handleGeneration(new Request("http://localhost/api/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestInput),
+    }), async () => { throw new Error("Must not generate"); }, undefined,
+    (received, abort) => checkGenerationPolicy(received, abort, {
+      moderate: async () => { order.push("moderate"); return false; },
+      classify: async () => { order.push("classify"); return { ...allowed, scope: { choice } }; },
+    }));
+    const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
+    assert.equal(response.status, 200);
+    assert.deepEqual(order, ["moderate", "classify"]);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, "reply");
+    assert.equal(events[0].reason, choice === "clarify" ? "clarification" : "conversation");
+    assert.match(events[0].message, expected);
+    assert.doesNotMatch(JSON.stringify(events), /document|feedbackToken|usage|preview/);
+  });
+}
+
+test("clarification without artwork stays conversational", async () => {
+  assert.deepEqual(await checkGenerationPolicy(input, signal(), {
+    ...checks, classify: async () => ({ ...allowed, scope: { choice: "clarify" } }),
+  }), { kind: "reply", reason: "clarification", message: "What would you like the SVG to show?" });
+});
+
+test("content rejection takes precedence over a social classification", async () => {
+  await assert.rejects(() => checkGenerationPolicy(input, signal(), {
+    ...checks, classify: async () => ({ scope: { choice: "thanks" }, content: { choice: "reject" } }),
+  }), error => error instanceof InputPolicyError && error.status === 422);
+});
+
+test("an actionable mixed social/artwork request still selects generation", async () => {
+  assert.deepEqual(await checkGenerationPolicy({ messages: [{ role: "user", content: "Thanks! Make it blue" }] }, signal(), checks), { kind: "generation" });
+});
+
 test("moderation rejection skips classification", async () => {
   await assert.rejects(() => checkGenerationPolicy(input, signal(), {
     moderate: async () => true,
@@ -55,7 +100,6 @@ test("moderation rejection skips classification", async () => {
 
 for (const [name, decision, expected] of [
   ["off topic", { ...allowed, scope: { choice: "reject" as const } }, /visual artwork/],
-  ["ambiguous", { ...allowed, scope: { choice: "clarify" as const } }, /which part/],
   ["inappropriate", { ...allowed, content: { choice: "reject" as const } }, /safety policy/],
 ] as const) {
   test(`rejects ${name} decision`, async () => {
@@ -134,14 +178,14 @@ test("native Decisions adapter uses the correct endpoint, choices, context and n
     assert.equal(body.model, "gpt-6-luna");
     assert.match(JSON.stringify(body.input), /latestRequest/);
     assert.deepEqual(body.questions.map((q: { name: string }) => q.name), ["scope", "content"]);
-    assert.deepEqual(body.questions[0].choices.map((c: { value: string }) => c.value), ["allow", "reject", "clarify"]);
+    assert.deepEqual(body.questions[0].choices.map((c: { value: string }) => c.value), ["allow", "reject", "clarify", "greeting", "thanks", "farewell", "acknowledge"]);
+    assert.match(body.questions[0].instructions, /actionable artwork request takes priority/);
+    assert.match(body.questions[0].instructions, /Draw a goodbye card/);
     return Response.json({
       model: "gpt-6-luna",
-      answers: body.questions.map((q: { name: string }) => ({
+      answers: body.questions.map((q: { name: string; choices: { value: string }[] }) => ({
         name: q.name, type: "choice", choice: "allow", confidence: 0.95,
-        probabilities: q.name === "scope"
-          ? [{ value: "allow", probability: 0.95 }, { value: "reject", probability: 0.03 }, { value: "clarify", probability: 0.02 }]
-          : [{ value: "allow", probability: 0.95 }, { value: "reject", probability: 0.05 }],
+        probabilities: q.choices.map(choice => ({ value: choice.value, probability: choice.value === "allow" ? 0.95 : 0.05 / (q.choices.length - 1) })),
       })),
       usage: { input_tokens: 200, output_tokens: 0, total_tokens: 200 },
     });
@@ -219,7 +263,7 @@ test("HTTP handler gates before streaming or generation, and passes approved fol
       filename: "circle.svg", message: "Created a circle.",
       svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle r="20"/></svg>',
     }, usage: { model: "mock", inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, totalTokens: 2 } };
-  }, undefined, async (received, abort) => { order.push("policy"); await checkGenerationPolicy(received, abort, checks); });
+  }, undefined, async (received, abort) => { order.push("policy"); return checkGenerationPolicy(received, abort, checks); });
   assert.match(await response.text(), /"type":"result"/);
   assert.deepEqual(order, ["policy", "generate"]);
 });

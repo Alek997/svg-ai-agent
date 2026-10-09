@@ -50,7 +50,7 @@ export async function requestGeneration(
       throw new Error("Unexpected data after generation finished.");
     const event = generationEventSchema.parse(JSON.parse(line));
     if (event.type === "error") throw new Error(event.message);
-    if (event.type === "result") completed = true;
+    if (event.type === "result" || event.type === "reply") completed = true;
     onEvent(event);
   }
   try {
