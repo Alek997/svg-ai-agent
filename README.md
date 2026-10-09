@@ -251,7 +251,7 @@ Components; interactive components use `use client`.
 ```text
 ChatComposer → SvgWorkspace → POST /api/generate
   → Zod request validation + current SVG validation
-  → user-history moderation → scope/content Decisions check
+  → user-history moderation → scope/content/language Decisions check
   → server-only ToolLoopAgent (up to six steps, querySvg + validateSvg)
   → activity/progress/validated preview events → final XML validation + result schema
   → result event → assistant history + SVG image preview/download
@@ -316,13 +316,17 @@ Every valid generation request passes these checks before any stream is returned
    claims and artwork XML are excluded. Selected flags can still overblock benign
    discussion; category booleans are not perfect contextual judgments.
 2. AI SDK `experimental_decide` with `openai.decisionModel('gpt-6-luna')` calls
-   the native Decisions API. Independent scope and product-content questions
+   the native Decisions API. Independent scope, product-content and reply-language questions
    classify the latest message using the last four preceding messages, labeled
    untrusted, plus whether artwork exists. SVG source is not sent to the checker.
    Scope returns `allow`, `reject`, `clarify`, `greeting`, `thanks`, `farewell` or
    `acknowledge`; content returns `allow` or `reject`. Content must allow before any
    reply or generation. Only scope `allow` starts generation; social categories select
    server-owned replies, and `clarify` asks a question suited to artwork presence.
+   Language chooses `en`, `sr_latn`, `sr_cyrl` or `other` in the same request. The latest
+   user message determines the reply language/script; an ambiguous message uses recent
+   user history. Assistant language does not set the preference. `other` falls back to
+   English. Language selection grants no scope or safety approval.
    No confidence cutoff is invented before calibration.
 
 There is no keyword blacklist: words such as “suicide” or “terrorism” can appear in
@@ -572,6 +576,18 @@ on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
 
+For the October 9, 2026 English/Serbian reply catalog change, 157 mocked tests, lint and
+`npm run build -- --webpack` (including TypeScript) passed. The default build failed
+fetching the existing Google Fonts in the sandbox; the Webpack fallback succeeded with
+network access. Tests cover both Serbian scripts, ASCII Serbian, English fallback, clarification,
+unchanged safety/generation routing, malformed language decisions and the native
+three-question Decisions request in one call. Browser checks used the actual workspace
+and handler in an isolated harness with mocked classifier results: English, Serbian
+Latin/Cyrillic and fallback replies rendered correctly; the canvas image URL and download
+remained available, with no new feedback controls. No live language-classification
+accuracy or deployed behavior was verified. The temporary harness was removed.
+
+
 For the October 9, 2026 conversational routing change, 140 mocked tests, lint and
 `npm run build -- --webpack` passed, including TypeScript. The default build was
 attempted but failed fetching the existing Google Fonts in the sandbox. The Webpack
@@ -581,9 +597,16 @@ seven scope options and require a full probability distribution for those choice
 Routing uses the existing choice classifier ([OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions),
 [AI SDK decide](https://ai-sdk.dev/docs/reference/ai-sdk-core/decide)), with no new
 model call or dependency. Decisions chooses a category rather than composing prose;
-server-owned replies keep casual turns bounded and unable to call tools. Replies are
-fixed English phrases in this first version, even for social messages recognized in
-other languages. Social turns still incur the existing moderation/classification
+server-owned replies keep casual turns bounded and unable to call tools. Replies now come from
+`lib/ai/conversation-replies.ts`, a typed, extensible catalog for English and Serbian
+Latin/Cyrillic. It covers greetings, thanks, farewells, acknowledgements and clarification
+with/without artwork. Add a language ID, its classifier criteria and complete reply copy
+in that file to extend it. Unsupported languages fall back to English.
+This is a temporary approach: natural, context-aware conversations in many languages
+would require a dedicated, bounded conversation-model call after classification, with
+no SVG tools. The current approach adds one language question to the existing Decisions
+call, not a new call or dependency. Interface labels, rejection/error text and the SVG
+agent’s generated explanations are outside this reply catalog. Social turns still incur the existing moderation/classification
 checks and count toward conversation limits; they do not incur SVG agent usage.
 No live classification evaluation was run for this change; mocked cases verify
 routing, not whether the model reliably interprets every phrasing or mixed request.

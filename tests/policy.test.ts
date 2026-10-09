@@ -10,7 +10,7 @@ import type { GenerationRequest } from "../lib/workspace/contracts";
 
 const input: GenerationRequest = { messages: [{ role: "user", content: "Draw a blue circle" }] };
 const signal = () => new AbortController().signal;
-const allowed = { scope: { choice: "allow" as const }, content: { choice: "allow" as const } };
+const allowed = { scope: { choice: "allow" as const }, content: { choice: "allow" as const }, language: { choice: "en" as const } };
 const checks: PolicyChecks = { moderate: async () => false, classify: async () => allowed };
 
 function mockEnvironment(context: TestContext) {
@@ -46,15 +46,25 @@ test("allowed requests run moderation then classification", async () => {
   assert.deepEqual(calls, ["moderate", "classify"]);
 });
 
-for (const [choice, text, expected] of [
-  ["greeting", "Hello!", /Hi/],
-  ["thanks", "Thanks, it looks nice", /welcome/],
-  ["thanks", "Hvala, izgleda lepo", /welcome/],
-  ["farewell", "Goodbye", /Goodbye/],
-  ["acknowledge", "Okay", /Got it/],
-  ["clarify", "Something feels off", /change/],
+for (const [choice, text, language, expected] of [
+  ["greeting", "Hello!", "en", /Hi/],
+  ["thanks", "Thanks, it looks nice", "en", /welcome/],
+  ["farewell", "Goodbye", "en", /Goodbye/],
+  ["acknowledge", "Okay", "en", /Got it/],
+  ["clarify", "Something feels off", "en", /change/],
+  ["greeting", "cao, kako je", "sr_latn", /^Ćao! Kako si\?$/],
+  ["thanks", "Hvala, izgleda lepo", "sr_latn", /Nema na čemu/],
+  ["farewell", "dovidjenja", "sr_latn", /Doviđenja/],
+  ["acknowledge", "vazi", "sr_latn", /^Važi\.$/],
+  ["clarify", "Nešto mi ne izgleda dobro", "sr_latn", /promeniš na ilustraciji/],
+  ["greeting", "ћао, како је", "sr_cyrl", /^Ћао! Како си\?$/],
+  ["thanks", "Хвала, изгледа лепо", "sr_cyrl", /Нема на чему/],
+  ["farewell", "довиђења", "sr_cyrl", /Довиђења/],
+  ["acknowledge", "важи", "sr_cyrl", /^Важи\.$/],
+  ["clarify", "Нешто ми не изгледа добро", "sr_cyrl", /промениш на илустрацији/],
+  ["greeting", "Bonjour", "other", /Hi/],
 ] as const) {
-  test(`${choice} returns a text-only reply after both safety checks`, async () => {
+  test(`${language} ${choice} returns a text-only reply after both safety checks`, async () => {
     const requestInput = { messages: [{ role: "user" as const, content: text }], currentSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"/>' };
     const order: string[] = [];
     const response = await handleGeneration(new Request("http://localhost/api/generate", {
@@ -62,7 +72,7 @@ for (const [choice, text, expected] of [
     }), async () => { throw new Error("Must not generate"); }, undefined,
     (received, abort) => checkGenerationPolicy(received, abort, {
       moderate: async () => { order.push("moderate"); return false; },
-      classify: async () => { order.push("classify"); return { ...allowed, scope: { choice } }; },
+      classify: async () => { order.push("classify"); return { ...allowed, scope: { choice }, language: { choice: language } }; },
     }));
     const events = (await response.text()).trim().split("\n").map(line => JSON.parse(line));
     assert.equal(response.status, 200);
@@ -81,9 +91,33 @@ test("clarification without artwork stays conversational", async () => {
   }), { kind: "reply", reason: "clarification", message: "What would you like the SVG to show?" });
 });
 
+for (const [language, expected] of [
+  ["sr_latn", "Šta želiš da SVG prikazuje?"],
+  ["sr_cyrl", "Шта желиш да SVG приказује?"],
+  ["other", "What would you like the SVG to show?"],
+] as const) {
+  test(`${language} clarification without artwork uses the create question`, async () => {
+    const outcome = await checkGenerationPolicy(input, signal(), {
+      ...checks, classify: async () => ({ ...allowed, scope: { choice: "clarify" }, language: { choice: language } }),
+    });
+    assert.deepEqual(outcome, { kind: "reply", reason: "clarification", message: expected });
+  });
+}
+
+test("Serbian language selection does not bypass safety or scope or alter generation routing", async () => {
+  for (const field of ["scope", "content"] as const) {
+    await assert.rejects(() => checkGenerationPolicy(input, signal(), {
+      ...checks, classify: async () => ({ ...allowed, [field]: { choice: "reject" }, language: { choice: "sr_latn" } }),
+    }), error => error instanceof InputPolicyError && error.status === 422);
+  }
+  assert.deepEqual(await checkGenerationPolicy({ messages: [{ role: "user", content: "Hvala! Oboji krug plavo" }] }, signal(), {
+    ...checks, classify: async () => ({ ...allowed, language: { choice: "sr_latn" } }),
+  }), { kind: "generation" });
+});
+
 test("content rejection takes precedence over a social classification", async () => {
   await assert.rejects(() => checkGenerationPolicy(input, signal(), {
-    ...checks, classify: async () => ({ scope: { choice: "thanks" }, content: { choice: "reject" } }),
+    ...checks, classify: async () => ({ ...allowed, scope: { choice: "thanks" }, content: { choice: "reject" } }),
   }), error => error instanceof InputPolicyError && error.status === 422);
 });
 
@@ -114,6 +148,8 @@ test("malformed decisions and provider failures fail closed without exposing sec
     { moderate: async () => { throw new Error("secret key and private text"); } },
     { classify: async () => { throw new Error("secret key and private text"); } },
     { classify: async () => ({ scope: { choice: "approve" } }) as never },
+    { classify: async () => ({ ...allowed, language: undefined }) as never },
+    { classify: async () => ({ ...allowed, language: { choice: "unknown" } }) as never },
   ]) {
     await assert.rejects(() => checkGenerationPolicy(input, signal(), { ...checks, ...overrides }), error => {
       assert.ok(error instanceof InputPolicyError);
@@ -169,30 +205,35 @@ test("scope context is bounded, marks history untrusted, and excludes artwork so
   assert.doesNotMatch(JSON.stringify(state), /sensitive XML/);
 });
 
-test("native Decisions adapter uses the correct endpoint, choices, context and no retries", async () => {
-  let calls = 0;
-  const provider = createOpenAI({ apiKey: "mock-key", fetch: async (url, init) => {
-    calls++;
-    assert.equal(String(url), "https://api.openai.com/v1/decisions");
-    const body = JSON.parse(String(init?.body));
-    assert.equal(body.model, "gpt-6-luna");
-    assert.match(JSON.stringify(body.input), /latestRequest/);
-    assert.deepEqual(body.questions.map((q: { name: string }) => q.name), ["scope", "content"]);
-    assert.deepEqual(body.questions[0].choices.map((c: { value: string }) => c.value), ["allow", "reject", "clarify", "greeting", "thanks", "farewell", "acknowledge"]);
-    assert.match(body.questions[0].instructions, /actionable artwork request takes priority/);
-    assert.match(body.questions[0].instructions, /Draw a goodbye card/);
-    return Response.json({
-      model: "gpt-6-luna",
-      answers: body.questions.map((q: { name: string; choices: { value: string }[] }) => ({
-        name: q.name, type: "choice", choice: "allow", confidence: 0.95,
-        probabilities: q.choices.map(choice => ({ value: choice.value, probability: choice.value === "allow" ? 0.95 : 0.05 / (q.choices.length - 1) })),
-      })),
-      usage: { input_tokens: 200, output_tokens: 0, total_tokens: 200 },
-    });
-  } });
-  assert.deepEqual(await checkSvgScope(input, signal(), provider.decisionModel("gpt-6-luna")), allowed);
-  assert.equal(calls, 1);
-});
+for (const language of ["en", "sr_latn", "sr_cyrl", "other"] as const) {
+  test(`native Decisions adapter uses one call with language ${language}, scope and content`, async () => {
+    let calls = 0;
+    const provider = createOpenAI({ apiKey: "mock-key", fetch: async (url, init) => {
+      calls++;
+      assert.equal(String(url), "https://api.openai.com/v1/decisions");
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.model, "gpt-6-luna");
+      assert.match(JSON.stringify(body.input), /latestRequest/);
+      assert.deepEqual(body.questions.map((q: { name: string }) => q.name), ["scope", "content", "language"]);
+      assert.deepEqual(body.questions[0].choices.map((c: { value: string }) => c.value), ["allow", "reject", "clarify", "greeting", "thanks", "farewell", "acknowledge"]);
+      assert.match(body.questions[0].instructions, /actionable artwork request takes priority/);
+      assert.match(body.questions[0].instructions, /Draw a goodbye card/);
+      assert.deepEqual(body.questions[2].choices.map((c: { value: string }) => c.value), ["en", "sr_latn", "sr_cyrl", "other"]);
+      assert.match(body.questions[2].instructions, /cao, kako je/);
+      assert.match(body.questions[2].instructions, /recent USER messages/);
+      return Response.json({
+        model: "gpt-6-luna",
+        answers: body.questions.map((q: { name: string; choices: { value: string }[] }) => ({
+          name: q.name, type: "choice", choice: q.name === "language" ? language : "allow", confidence: 0.95,
+          probabilities: q.choices.map(choice => ({ value: choice.value, probability: choice.value === (q.name === "language" ? language : "allow") ? 0.95 : 0.05 / (q.choices.length - 1) })),
+        })),
+        usage: { input_tokens: 200, output_tokens: 0, total_tokens: 200 },
+      });
+    } });
+    assert.deepEqual(await checkSvgScope(input, signal(), provider.decisionModel("gpt-6-luna")), { ...allowed, language: { choice: language } });
+    assert.equal(calls, 1);
+  });
+}
 
 test("native Decisions refusal and transient errors are not treated as approval or retried", async () => {
   for (const response of [
