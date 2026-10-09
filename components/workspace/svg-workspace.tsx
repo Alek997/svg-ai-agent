@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChatPanel } from "./chat-panel";
+import { Button } from "@/components/ui/button";
 import { SvgCanvas } from "./svg-canvas";
 import { sampleDocument } from "@/lib/workspace/sample";
 import {
@@ -29,6 +30,9 @@ export function SvgWorkspace() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [conversation, setConversation] = useState(0);
+  const [draft, setDraft] = useState("");
+  const resetDialog = useRef<HTMLDialogElement>(null);
+  const keepWorking = useRef<HTMLButtonElement>(null);
   const activeRequest = useRef<AbortController | null>(null);
   const [retryInput, setRetryInput] = useState<GenerationRequest | null>(null);
   const retryAvailableAt = useRef(0);
@@ -43,6 +47,27 @@ export function SvgWorkspace() {
     }, 250);
     return () => clearInterval(interval);
   }, [isRetryCoolingDown]);
+
+  const hasWork = messages.length > 1 || !!document || !!draft.trim() || isLoading;
+  useEffect(() => {
+    if (!hasWork) return;
+    function warnBeforeLeaving(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      // Browsers display their own warning, not application-provided text.
+      event.returnValue = true;
+    }
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [hasWork]);
+
+  function requestNewIcon() {
+    if (!hasWork) {
+      resetConversation();
+      return;
+    }
+    resetDialog.current?.showModal();
+    keepWorking.current?.focus();
+  }
 
   async function generate(input: GenerationRequest) {
     if (activeRequest.current) return;
@@ -168,12 +193,14 @@ export function SvgWorkspace() {
   }
 
   function resetConversation() {
+    resetDialog.current?.close();
     activeRequest.current?.abort();
     activeRequest.current = null;
     setRetryInput(null);
     retryAvailableAt.current = 0;
     setRetrySeconds(0);
     setMessages([welcome]);
+    setDraft("");
     setDocument(null);
     setPreview(null);
     setIsLoading(false);
@@ -195,7 +222,9 @@ export function SvgWorkspace() {
         key={conversation}
         messages={messages}
         onSend={sendMessage}
-        onReset={resetConversation}
+        onReset={requestNewIcon}
+        draft={draft}
+        onDraftChange={setDraft}
         isLoading={isLoading}
         progress={progress}
         activity={activity}
@@ -210,6 +239,28 @@ export function SvgWorkspace() {
             : undefined
         }
       />
+      <dialog
+        ref={resetDialog}
+        aria-labelledby="reset-title"
+        aria-describedby="reset-description"
+        className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-stone-200 bg-white p-6 text-stone-800 shadow-xl backdrop:bg-stone-900/40"
+      >
+        <h2 id="reset-title" className="text-lg font-semibold">Start a new icon?</h2>
+        <div id="reset-description" className="mt-3 space-y-3 text-sm leading-6 text-stone-600">
+          <p>This will permanently remove your current conversation, artwork, and any unsent message. This cannot be undone.</p>
+          {isLoading && <p>Generation is still running and will be canceled.</p>}
+          {document && <p>To keep your icon, choose Keep working and download your SVG first.</p>}
+        </div>
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            ref={keepWorking}
+            type="button"
+            onClick={() => resetDialog.current?.close()}
+            className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium hover:bg-stone-50"
+          >Keep working</button>
+          <Button onClick={resetConversation} variant="destructive">Discard and start new</Button>
+        </div>
+      </dialog>
     </div>
   );
 }

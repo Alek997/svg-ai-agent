@@ -11,6 +11,8 @@ type ChatPanelProps = {
   messages: Message[];
   onSend: (content: string) => void;
   onReset: () => void;
+  draft: string;
+  onDraftChange: (draft: string) => void;
   isLoading: boolean;
   progress: number;
   activity: string;
@@ -23,6 +25,8 @@ export function ChatPanel({
   messages,
   onSend,
   onReset,
+  draft,
+  onDraftChange,
   isLoading,
   progress,
   activity,
@@ -53,12 +57,17 @@ export function ChatPanel({
         <Button
           variant="ghost"
           onClick={onReset}
-          aria-label="Start a new conversation"
-          title="New conversation"
+          aria-label="Start a new icon"
+          title="Start a new icon and conversation"
         >
           <Icon name="plus" width={16} height={16} />
+          New icon
         </Button>
       </div>
+      <p className="border-b border-stone-200 bg-stone-50 px-5 py-3 text-[11px] leading-5 text-stone-600">
+        One icon at a time. New icon, reloading, or leaving this page clears your
+        conversation and artwork permanently. Download your SVG first to keep it.
+      </p>
       <div
         ref={history}
         role="log"
@@ -110,7 +119,7 @@ export function ChatPanel({
           )}
         </div>
       )}
-      <ChatComposer onSend={onSend} isLoading={isLoading} />
+      <ChatComposer onSend={onSend} draft={draft} onDraftChange={onDraftChange} isLoading={isLoading} />
     </aside>
   );
 }
