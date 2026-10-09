@@ -3,7 +3,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 const lifetimeMs = 7 * 24 * 60 * 60 * 1000;
-const payloadSchema = z.object({ id: z.string().uuid(), issuedAt: z.number().int() }).strict();
+// Braintrust row IDs are opaque strings: the current SDK uses hex IDs,
+// while older configurations use UUIDs. The HMAC establishes authenticity.
+const payloadSchema = z.object({ id: z.string().min(1).max(200), issuedAt: z.number().int() }).strict();
 
 function signature(payload: string, userId: string, secret: string) {
   return createHmac("sha256", secret).update(JSON.stringify(["svg-feedback-v1", userId, payload])).digest();

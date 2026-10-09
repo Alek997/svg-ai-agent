@@ -507,6 +507,13 @@ authentication route. Live Braintrust delivery and deployed behavior remain
 unverified; configure the environment above and check a real generation and rating
 in Logs before relying on production collection.
 
+Feedback compatibility fix (October 9, 2026): Braintrust 3.37.1 issues hexadecimal
+row IDs by default. Feedback tokens now treat signed row IDs as bounded opaque
+strings, rather than requiring UUIDs. Regression tests use the SDK's actual ID
+generator and cover generation → feedback submission, legacy UUIDs, ownership,
+tampering, and expiry. Existing correctly signed tokens work after the fix; no
+secret rotation or new generation is needed solely for this ID-format issue.
+
 ## Trust and usage limits
 
 Client history is editable, including forged assistant messages. It is context,

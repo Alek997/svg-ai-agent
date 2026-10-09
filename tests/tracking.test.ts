@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { OTELIDGenerator } from "braintrust";
 import { createFeedbackToken, verifyFeedbackToken } from "../lib/ai/feedback-token";
 import { handleFeedback } from "../lib/ai/handle-feedback";
 import { createGenerationObserver } from "../lib/ai/tracking";
@@ -9,7 +10,8 @@ import { generationRequestSchema, type GenerationRequest } from "../lib/workspac
 
 const secret = "test-secret-only-".repeat(4);
 const user = "user_test";
-const id = randomUUID();
+// Exercise the installed SDK's default row ID format, not a fabricated UUID.
+const id = new OTELIDGenerator().getSpanId();
 const input: GenerationRequest = { conversationId: randomUUID(), messages: [{ role: "user", content: "A blue circle" }] };
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="blue"/></svg>';
 const usage = { model: "mock", inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, totalTokens: 150 };
@@ -28,6 +30,14 @@ test("feedback token binds a result to its user, signing key, and expiry", () =>
   assert.equal(verifyFeedbackToken(token, user, secret, now - 1), null);
   assert.equal(verifyFeedbackToken(token.replace(/^./, "x"), user, secret, now), null);
   assert.equal(verifyFeedbackToken(`${token}.extra`, user, secret, now), null);
+});
+
+test("feedback also accepts legacy UUID row IDs but rejects empty or oversized signed IDs", () => {
+  const legacyId = randomUUID();
+  assert.equal(verifyFeedbackToken(createFeedbackToken(legacyId, user, secret), user, secret), legacyId);
+  for (const invalidId of ["", "x".repeat(201)]) {
+    assert.equal(verifyFeedbackToken(createFeedbackToken(invalidId, user, secret), user, secret), null);
+  }
 });
 
 test("conversation IDs must be UUIDs and cannot introduce a user ID", () => {
@@ -99,6 +109,13 @@ test("generation trace contains final validated SVG, history, tool results and t
   assert.equal(meta.tools[0].input.query, "circle");
   assert.equal(span.ended, 1);
   assert.equal(JSON.stringify(span.records).includes(result.feedbackToken), false);
+  let feedbackSaved = false;
+  const feedbackResponse = await handleFeedback(request({ token: result.feedbackToken, rating: 1 }), user, secret, async spanId => {
+    assert.equal(spanId, id);
+    feedbackSaved = true;
+  });
+  assert.equal(feedbackResponse.status, 200);
+  assert.equal(feedbackSaved, true);
 });
 
 test("unsafe generation records failure and never issues feedback permission", async () => {
