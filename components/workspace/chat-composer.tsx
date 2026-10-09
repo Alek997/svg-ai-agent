@@ -67,7 +67,7 @@ export function ChatComposer({
         </div>
       </div>
       <p className="mt-3 text-center text-[10px] text-stone-400">
-        Enter to send · Shift + Enter for a new line
+        Family-friendly artwork only · Shift + Enter for a new line
       </p>
     </form>
   );

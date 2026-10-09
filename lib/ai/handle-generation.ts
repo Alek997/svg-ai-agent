@@ -12,6 +12,7 @@ import {
 } from "../workspace/contracts";
 import { safeSvgSchema } from "../svg/validate-svg";
 import { GENERATION_TIMEOUT_MS } from "../workspace/generation-limits";
+import { checkGenerationPolicy, InputPolicyError } from "./input-policy";
 
 const resultSchema = z
   .object({
@@ -95,6 +96,7 @@ export async function handleGeneration(
   request: Request,
   generate: GenerateSvg,
   timeoutMs = GENERATION_TIMEOUT_MS,
+  checkPolicy: (input: GenerationRequest, signal: AbortSignal) => Promise<void> = checkGenerationPolicy,
 ) {
   let input: GenerationRequest;
   try {
@@ -113,6 +115,21 @@ export async function handleGeneration(
   const cancellation = new AbortController();
   const timeout = setTimeout(() => cancellation.abort(), timeoutMs);
   const signal = AbortSignal.any([request.signal, cancellation.signal]);
+  // Gate before starting the stream: denied requests cannot run tools or emit drafts.
+  // The same overall deadline includes policy checks and generation.
+  try {
+    await checkPolicy(input, signal);
+    signal.throwIfAborted();
+  } catch (error) {
+    clearTimeout(timeout);
+    cancellation.abort();
+    return Response.json({
+      error: error instanceof InputPolicyError ? error.message : "Unable to check this request right now. Please try again shortly.",
+    }, {
+      status: error instanceof InputPolicyError ? error.status : 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const encoder = new TextEncoder();
   let closed = false;
   let responseBytes = 0;

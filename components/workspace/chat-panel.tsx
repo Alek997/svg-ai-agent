@@ -16,6 +16,7 @@ type ChatPanelProps = {
   activity: string;
   error: string | null;
   onRetry?: () => void;
+  retrySeconds?: number;
 };
 
 export function ChatPanel({
@@ -27,6 +28,7 @@ export function ChatPanel({
   activity,
   error,
   onRetry,
+  retrySeconds = 0,
 }: ChatPanelProps) {
   const history = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -102,8 +104,8 @@ export function ChatPanel({
         >
           <p>{error}</p>
           {onRetry && (
-            <Button onClick={onRetry} disabled={isLoading} className="mt-2">
-              Retry generation
+            <Button onClick={onRetry} disabled={isLoading || retrySeconds > 0} className="mt-2">
+              {retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Retry generation"}
             </Button>
           )}
         </div>

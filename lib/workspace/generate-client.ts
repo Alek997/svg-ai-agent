@@ -5,6 +5,12 @@ import {
   type GenerationRequest,
 } from "./contracts";
 
+export class GenerationRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 export async function requestGeneration(
   input: GenerationRequest,
   signal: AbortSignal,
@@ -25,7 +31,7 @@ export async function requestGeneration(
       typeof body.error === "string"
         ? body.error
         : "Unable to start generation.";
-    throw new Error(message);
+    throw new GenerationRequestError(message, response.status);
   }
   if (
     !response.body ||

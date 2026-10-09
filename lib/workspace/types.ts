@@ -2,6 +2,7 @@ export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  excludedFromContext?: boolean;
   flow?: import("./flow").FlowEntry[];
   steps?: import("./contracts").StepTrace[];
   runStatus?: "running" | "completed" | "error";

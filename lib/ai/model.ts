@@ -9,7 +9,7 @@ const environmentSchema = z.object({
   OPENAI_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
 });
 
-export function getLLM() {
+function getEnvironment() {
   // Validate when generation is requested, so builds do not require a live key.
   const result = environmentSchema.safeParse({
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -21,9 +21,20 @@ export function getLLM() {
     throw new ModelConfigurationError();
   }
 
-  const openai = createOpenAI({ apiKey: result.data.OPENAI_API_KEY });
+  return result.data;
+}
 
-  return openai.responses(result.data.OPENAI_MODEL);
+export function getOpenAIKey() {
+  return getEnvironment().OPENAI_API_KEY;
+}
+
+export function getOpenAIProvider() {
+  return createOpenAI({ apiKey: getOpenAIKey() });
+}
+
+export function getLLM() {
+  const environment = getEnvironment();
+  return createOpenAI({ apiKey: environment.OPENAI_API_KEY }).responses(environment.OPENAI_MODEL);
 }
 
 // The header needs only the public model name, never API credentials.

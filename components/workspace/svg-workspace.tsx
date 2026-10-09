@@ -9,7 +9,7 @@ import {
   type GenerationRequest,
 } from "@/lib/workspace/contracts";
 import { recordFlowEvent } from "@/lib/workspace/flow";
-import { requestGeneration } from "@/lib/workspace/generate-client";
+import { GenerationRequestError, requestGeneration } from "@/lib/workspace/generate-client";
 import { CLIENT_GENERATION_TIMEOUT_MS } from "@/lib/workspace/generation-limits";
 import type { ChatMessage, SvgDocument } from "@/lib/workspace/types";
 
@@ -31,8 +31,18 @@ export function SvgWorkspace() {
   const [conversation, setConversation] = useState(0);
   const activeRequest = useRef<AbortController | null>(null);
   const [retryInput, setRetryInput] = useState<GenerationRequest | null>(null);
+  const retryAvailableAt = useRef(0);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const isRetryCoolingDown = retrySeconds > 0;
 
   useEffect(() => () => activeRequest.current?.abort(), []);
+  useEffect(() => {
+    if (!isRetryCoolingDown) return;
+    const interval = setInterval(() => {
+      setRetrySeconds(Math.max(0, Math.ceil((retryAvailableAt.current - Date.now()) / 1000)));
+    }, 250);
+    return () => clearInterval(interval);
+  }, [isRetryCoolingDown]);
 
   async function generate(input: GenerationRequest) {
     if (activeRequest.current) return;
@@ -41,10 +51,12 @@ export function SvgWorkspace() {
     const replyId = crypto.randomUUID();
     setMessages(previous => [...previous, { id: replyId, role: "assistant", content: "", flow: [], tools: [], steps: [], runStatus: "running" }]);
     setRetryInput(input);
+    retryAvailableAt.current = 0;
+    setRetrySeconds(0);
     setIsLoading(true);
     setProgress(0);
     setPreview(null);
-    setActivity("Starting generation…");
+    setActivity("Checking your request…");
     setError(null);
     const timeout = setTimeout(() => controller.abort(), CLIENT_GENERATION_TIMEOUT_MS);
     try {
@@ -93,6 +105,19 @@ export function SvgWorkspace() {
       });
     } catch (error) {
       if (activeRequest.current === controller) {
+        if (error instanceof GenerationRequestError && error.status === 422) {
+          setRetryInput(null);
+          // Keep the rejected prompt visible, but don't resubmit it on the next
+          // safe turn. This is UI recovery, not a server trust mechanism.
+          setMessages(previous => {
+            const lastUserId = previous.findLast(message => message.role === "user")?.id;
+            return previous.map(message => message.id === lastUserId
+              ? { ...message, excludedFromContext: true } : message);
+          });
+        } else {
+          retryAvailableAt.current = Date.now() + 15_000;
+          setRetrySeconds(15);
+        }
         const message = controller.signal.aborted
           ? "Generation timed out. Please retry."
           : error instanceof Error ? error.message : "Generation failed. Please retry.";
@@ -128,7 +153,7 @@ export function SvgWorkspace() {
     ];
     const input = generationRequestSchema.safeParse({
       messages: nextMessages
-        .filter((message) => message.id !== "welcome" && message.content.trim())
+        .filter((message) => message.id !== "welcome" && !message.excludedFromContext && message.content.trim())
         .map(({ role, content }) => ({ role, content })),
       ...(document ? { currentSvg: document.source } : {}),
     });
@@ -146,6 +171,8 @@ export function SvgWorkspace() {
     activeRequest.current?.abort();
     activeRequest.current = null;
     setRetryInput(null);
+    retryAvailableAt.current = 0;
+    setRetrySeconds(0);
     setMessages([welcome]);
     setDocument(null);
     setPreview(null);
@@ -173,9 +200,11 @@ export function SvgWorkspace() {
         progress={progress}
         activity={activity}
         error={error}
+        retrySeconds={retrySeconds}
         onRetry={
           error && retryInput
             ? () => {
+                if (Date.now() < retryAvailableAt.current) return;
                 void generate(retryInput);
               }
             : undefined

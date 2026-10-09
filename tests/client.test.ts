@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { requestGeneration } from "../lib/workspace/generate-client";
+import { GenerationRequestError, requestGeneration } from "../lib/workspace/generate-client";
 import type { GenerationEvent } from "../lib/workspace/contracts";
 
 const result: GenerationEvent = {
@@ -16,6 +16,16 @@ const result: GenerationEvent = {
   },
 };
 const input = { messages: [{ role: "user" as const, content: "Draw a café" }] };
+
+test("client distinguishes policy rejection from temporary check failure", async context => {
+  for (const status of [422, 503]) {
+    context.mock.method(globalThis, "fetch", async () => Response.json({ error: "Safe message" }, { status }));
+    await assert.rejects(() => requestGeneration(input, new AbortController().signal, () => {
+      throw new Error("Must not emit generation events");
+    }), error => error instanceof GenerationRequestError && error.status === status && error.message === "Safe message");
+    context.mock.restoreAll();
+  }
+});
 
 test("client sends messages and decodes JSON records split across UTF-8 chunks", async (t) => {
   const bytes = new TextEncoder().encode(

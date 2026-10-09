@@ -5,7 +5,9 @@ Turn a text prompt into a clean SVG, with a browser preview and conversation sid
 ## Current behavior
 
 Sending a chat message makes `POST /api/generate` with user/assistant history
-and, for edits, the current validated SVG. A server-only AI SDK `ToolLoopAgent`
+and, for edits, the current validated SVG. After sign-in and request validation,
+server-side input policy checks must pass before streaming or tools start (see
+the policy section below). A server-only AI SDK `ToolLoopAgent`
 can work across up to six model steps per request:
 
 - `webSearch` looks up a subject through Tavily only when the model does not know
@@ -213,6 +215,8 @@ Components; interactive components use `use client`.
 - `lib/workspace/flow.ts`: preserves chronological event order for the conversation timeline.
 - `lib/workspace/types.ts`, `sample.ts`: inferred UI types and authored sample.
 - `lib/ai/model.ts`: server-only environment validation and model configuration.
+- `lib/ai/input-policy.ts`: OpenAI moderation, Decisions
+  classification, the shared product policy, and bounded failure handling.
 - `lib/ai/web-search.ts`: server-only Tavily tool with request-local budgets and bounded source results.
 - `lib/ai/svg-agent.ts`: server-only reusable agent factory, instructions, model
   output schema, request-local tools, step/token/retry limits, and conversation preparation.
@@ -228,6 +232,7 @@ Components; interactive components use `use client`.
 ```text
 ChatComposer → SvgWorkspace → POST /api/generate
   → Zod request validation + current SVG validation
+  → user-history moderation → scope/content Decisions check
   → server-only ToolLoopAgent (up to six steps, querySvg + validateSvg)
   → activity/progress/validated preview events → final XML validation + result schema
   → result event → assistant history + SVG image preview/download
@@ -252,7 +257,101 @@ dimensions; activity carries the current step and tool name. A result contains `
 `name`, `description`, `source`, `width`, and `height`, plus server-supplied `usage`
 with model and token counts. Usage is separate from model-generated output and is
 not forwarded in conversation history. Request errors return JSON
-with an HTTP 400/413/415 status; errors after streaming starts are stream events.
+with an HTTP 400/413/415 status. Policy rejection or a clarification request returns
+422; unavailable, malformed, refused or timed-out policy checks return 503.
+Errors after streaming starts are stream events.
+
+## Input policy and guardrails
+
+SVG Studio permits family-friendly icons, logos, illustrations, visual diagrams,
+and edits, including contextual follow-ups and short labels belonging in artwork.
+It rejects unrelated Q&A, essays, translations and programming tasks, including
+attempts to wrap unrelated answers in SVG text, metadata or paths. Mixed requests
+containing unrelated tasks are rejected; unclear visual requests ask for clarification.
+
+The content policy focuses on serious harmful content: sexual exploitation and sexual
+content involving minors; explicit sexual activity or pornography; terrorist or violent
+extremist promotion and assistance; severe hate targeting protected groups; credible
+threats and incitement; graphic gore; promotion or instructions for suicide, self-harm
+or eating disorders; and actionable instructions for serious criminal wrongdoing.
+Swearing, mild rudeness, obscene gestures, non-sexual nudity, and ordinary non-graphic
+fictional violence are not independently prohibited. Educational, historical, medical,
+anti-hate, prevention and recovery artwork is allowed when it does not promote harm.
+For example, a suicide-prevention poster is allowed, while a suicide-instruction diagram
+is prohibited. These are product decisions; classifier accuracy remains unmeasured.
+
+Every valid generation request passes these checks before any stream is returned:
+
+1. All submitted **user** messages are joined into one text input for
+   `omni-moderation-latest`. Specific category flags are hard stops: `sexual`,
+   `sexual/minors`, `hate/threatening`, `harassment/threatening`, `illicit/violent`,
+   `self-harm/intent`, `self-harm/instructions`, and `violence/graphic`.
+   The broad `flagged` aggregate, ordinary harassment, general self-harm mentions,
+   non-graphic violence, and the base hate category do not independently reject a
+   request. The content classifier still checks severe hate and harmful depictions.
+   This rechecks editable user history in one free moderation request. Assistant
+   claims and artwork XML are excluded. Selected flags can still overblock benign
+   discussion; category booleans are not perfect contextual judgments.
+2. AI SDK `experimental_decide` with `openai.decisionModel('gpt-6-luna')` calls
+   the native Decisions API. Independent scope and product-content questions
+   classify the latest message using the last four preceding messages, labeled
+   untrusted, plus whether artwork exists. SVG source is not sent to the checker.
+   Scope returns `allow`, `reject` or `clarify`; content returns `allow` or `reject`.
+   Both must allow generation. No confidence cutoff is invented before calibration.
+
+There is no keyword blacklist: words such as “suicide” or “terrorism” can appear in
+legitimate prevention artwork, and profanity alone does not trigger a local rejection.
+
+The gate has a shared 15-second deadline, zero automatic retries, and request
+cancellation. It shares the handler's overall generation deadline. Errors, native
+refusals or malformed results fail closed with a generic 503; raw provider errors,
+prompts, credentials and classification responses are not exposed or logged.
+Selected moderation categories reject before Decisions.
+
+The UI displays “Checking your request…” during the gate. A rejected or ambiguous
+prompt remains visible but is omitted from subsequent requests, so a safe next
+message can proceed. The previous completed artwork is retained. No retry button
+is shown for 422; temporary failures remain retryable. These client behaviors are
+for recovery and do not establish trust on the server.
+
+After a retryable failure, the Retry button waits 15 seconds and shows a countdown.
+The cooldown starts again after another failure and clears on a new request or new
+conversation. This is a browser convenience only: it does not limit new submissions
+or direct API requests, and it does not implement provider-aware or automatic retries.
+
+Only the existing server-side `OPENAI_API_KEY` is needed. `OPENAI_MODEL` still
+controls SVG generation; the checker separately uses `gpt-6-luna`, the currently
+supported Decisions model. The provider is pinned at `@ai-sdk/openai@4.0.85`
+because decision support is experimental. As checked October 9, 2026, Decisions
+is in public beta and charges $0.10 per million input tokens, with no output or
+cache charges. Moderation is free. Policy usage is **not included** in the UI's
+generation-token counter. See the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions),
+[AI SDK decision provider](https://ai-sdk.dev/providers/ai-sdk-providers/openai#decision-models),
+and [moderation guide](https://developers.openai.com/api/docs/guides/moderation).
+
+### Accepted portfolio tradeoffs
+
+Client-owned assistant history, earlier off-topic user messages, and artwork remain
+forgeable. Full history is not reclassified on every request; only user text is
+remoderated. The classifier sees bounded context, so very old references can need
+clarification. Server-owned conversation history and ownership checks remain future
+work. Agent instructions reinforce the policy, but prompt injection resistance
+and semantic accuracy are not guaranteed.
+
+These are **input** guardrails. XML validation prevents executable SVG, not harmful
+visual content. Progressive previews, tool traces and final images do not undergo
+visual/content moderation. For strict approval before display, buffer all generated
+content and safely rasterize/inspect output before releasing it. Shared rate limits,
+account restrictions and cost quotas remain separate work; this change does not add
+them. The gate applies to the HTTP handler; direct agent/eval calls bypass it and
+must explicitly call `checkGenerationPolicy` if input enforcement is needed there.
+
+Mocked tests cover removal of the local word blacklist, selected moderation categories,
+native Decisions request serialization, provider refusals, moderation of editable history, rejections,
+clarification, deadlines, cancellation, malformed/oversized provider responses,
+error redaction, and gating before generation. No live provider accuracy or billing
+has been verified for these guardrails. Evaluate labeled English/Serbian requests,
+follow-ups and adversarial prompts before claiming measured enforcement quality.
 
 ### Reusing the agent in server code and eval runners
 
@@ -355,6 +454,35 @@ validates the server response contract; the authoritative SVG safety check runs
 on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
+
+The Retry button cooldown was verified in an isolated browser fixture with mocked
+503 and 422 responses: disabled countdown, re-enabling after expiry, restart after
+another failure, and new-conversation reset. All 116 tests, lint and the webpack
+production build passed after the change. Temporary fixture files were removed.
+
+The October 9 policy revision removes the profanity blacklist, narrows automatic
+moderation rejection to selected serious categories, and updates the shared classifier/
+generator policy to allow benign sensitive-topic artwork. The composer hint now reads
+“Family-friendly artwork only · Shift + Enter for a new line”. Earlier browser checks
+below exercised the original stricter policy with mocks; they do not measure the revised
+policy's live classification accuracy. For this revision, all 116 mocked tests, lint,
+and the webpack production build (including TypeScript) passed.
+
+For the October 9, 2026 input-policy changes, mocked tests, lint and TypeScript
+checks passed, as did `npm run build -- --webpack`. The default build was attempted:
+network isolation first blocked Google Fonts, then Turbopack hit the sandbox's
+existing CSS processing port restriction. The webpack fallback succeeded with
+network access for the existing fonts.
+
+Browser checks used the actual workspace components and HTTP handler in an
+isolated localhost harness with mocked moderation/classification/generation.
+Verified the checking/loading state; profanity, off-topic and content rejections;
+clarification; a retryable provider failure; safe follow-up after rejection;
+retention of completed artwork on rejection or invalid output; and download
+contents matching that retained validated artwork. All temporary harness files
+were removed. Native moderation/Decisions request construction was tested with
+mock HTTP responses; live provider judgments, deployed enforcement and classifier
+accuracy remain unverified.
 
 For the October 8, 2026 agent/preview and execution-details changes, 58 mocked tests, lint, TypeScript,
 and `npm run build -- --webpack` passed. The default `npm run build` was attempted;
