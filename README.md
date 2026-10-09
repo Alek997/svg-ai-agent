@@ -53,7 +53,22 @@ bounded inputs/results are forwarded; raw provider errors are never shown.
 Temporary previews are separate from the saved document. Download and copy are
 disabled during generation; only a complete validated result replaces the saved
 SVG. Failed requests discard the draft, retain the last completed SVG, and offer
-retry. Starting a new conversation cancels generation and clears state.
+retry. The labeled **New icon** action starts a fresh conversation. If there is
+history, artwork, a running request, or a nonempty draft, it first opens a native
+modal explaining that discarding the current workspace cannot be undone. **Keep
+working** receives focus; Escape also cancels. Confirming **Discard and start new**
+cancels generation and clears the conversation, artwork, draft, error, and retry
+state. An empty workspace resets without a confirmation.
+
+A permanent note explains the one-icon limit and recommends downloading before
+resetting or reloading. A `beforeunload` listener is attached only while there is
+work to lose, requesting the browser's reload/close/navigation confirmation.
+Browsers control that dialog's text and may omit it in some situations, especially
+on mobile; it is a guard, not persistence. See
+[MDN's beforeunload limitations](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event).
+Draft state lives in the workspace so an unsent message receives the same protection.
+The native `<dialog>` provides modal focus containment and Escape behavior without
+adding a dialog dependency.
 
 The preview uses a Blob URL in an image element, never inline markup injection.
 Its URL changes only when the exact SVG source changes. Finalizing an unchanged
@@ -355,6 +370,19 @@ validates the server response contract; the authoritative SVG safety check runs
 on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
+
+For the October 9, 2026 reset-confirmation changes, lint, all 84 mocked tests, and
+`npm run build -- --webpack` passed. The default build was attempted but failed
+on Google Fonts fetching in the sandbox; a network-enabled retry hit the existing
+Turbopack CSS processing port restriction. Browser checks used the actual workspace
+components in an isolated temporary harness with mock generation responses:
+empty reset, draft confirmation, Keep working, Escape, initial focus, completed
+artwork/download reminder, running-generation warning and cancellation, and a
+failed request. Confirmed discard returned to the sample canvas and cleared
+messages/draft/retry. Empty reload succeeded; reload attempts with work retained
+the workspace, but the in-app browser did not expose the native warning text for
+inspection. The harness added no production route or authentication bypass and
+made no live model calls.
 
 For the October 8, 2026 agent/preview and execution-details changes, 58 mocked tests, lint, TypeScript,
 and `npm run build -- --webpack` passed. The default `npm run build` was attempted;

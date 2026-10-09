@@ -1,23 +1,25 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { MAX_PROMPT_LENGTH } from "@/lib/workspace/contracts";
 
 export function ChatComposer({
   onSend,
+  draft,
+  onDraftChange,
   isLoading = false,
 }: {
   onSend: (content: string) => void;
+  draft: string;
+  onDraftChange: (draft: string) => void;
   isLoading?: boolean;
 }) {
-  const [draft, setDraft] = useState("");
   function submit() {
     const content = draft.trim();
     if (!content || isLoading) return;
     onSend(content);
-    setDraft("");
+    onDraftChange("");
   }
   return (
     <form
@@ -34,7 +36,7 @@ export function ChatComposer({
         <textarea
           id="prompt"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => onDraftChange(event.target.value)}
           maxLength={MAX_PROMPT_LENGTH}
           disabled={isLoading}
           rows={3}
