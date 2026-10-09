@@ -9,6 +9,7 @@ export type ChatMessage = {
   runError?: string;
   tools?: import("./contracts").ToolTrace[];
   usage?: import("./contracts").GenerationUsage;
+  feedbackToken?: string;
 };
 
 // Model output must pass server XML validation before becoming a document.

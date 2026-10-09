@@ -1,0 +1,67 @@
+"use client";
+
+import { useId, useRef, useState } from "react";
+import { feedbackReasons, feedbackRequestSchema } from "@/lib/workspace/feedback";
+
+export function GenerationFeedback({ token }: { token: string }) {
+  const id = useId();
+  const [rating, setRating] = useState<0 | 1 | null>(null);
+  const [comment, setComment] = useState("");
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = useState("");
+  const sending = useRef(false);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (sending.current) return;
+    const parsed = feedbackRequestSchema.safeParse({ token, rating, comment, ...(rating === 0 && reason ? { reason } : {}) });
+    if (!parsed.success) return;
+    sending.current = true;
+    setStatus("saving");
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed.data),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok !== true) throw new Error(typeof body.error === "string" ? body.error : "Feedback could not be saved. Please try again.");
+      setStatus("saved");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Feedback could not be saved. Please try again.");
+      setStatus("error");
+    } finally { sending.current = false; }
+  }
+
+  if (status === "saved") return <p role="status" className="mt-3 text-xs text-stone-500">Thanks for your feedback.</p>;
+
+  return (
+    <form onSubmit={submit} className="mt-3 space-y-2 text-xs text-stone-600">
+      <fieldset disabled={status === "saving"} className="space-y-2">
+        <legend className="mb-2">How was this generation?</legend>
+        <div className="flex gap-2">
+          {([1, 0] as const).map(value => (
+            <button key={value} type="button" aria-label={value === 1 ? "Good generation" : "Poor generation"} aria-pressed={rating === value}
+              onClick={() => { setRating(value); setStatus("idle"); }}
+              className={`rounded-md border px-3 py-1.5 disabled:opacity-50 ${rating === value ? "border-stone-700 bg-stone-100" : "border-stone-200 hover:bg-stone-50"}`}>
+              <span aria-hidden="true">{value === 1 ? "👍" : "👎"}</span>
+            </button>
+          ))}
+        </div>
+        {rating !== null && <>
+          {rating === 0 && <div>
+            <label htmlFor={`${id}-reason`} className="mb-1 block">What could be better? (optional)</label>
+            <select id={`${id}-reason`} value={reason} onChange={event => setReason(event.target.value)} className="w-full rounded-md border border-stone-200 bg-white p-2">
+              <option value="">Choose a reason</option>
+              {feedbackReasons.map(reason => <option key={reason}>{reason}</option>)}
+            </select>
+          </div>}
+          <label htmlFor={`${id}-comment`} className="block">Comment (optional)</label>
+          <textarea id={`${id}-comment`} value={comment} maxLength={1000} rows={2} onChange={event => setComment(event.target.value)} className="w-full rounded-md border border-stone-200 p-2" />
+          <button type="submit" className="rounded-md border border-stone-200 px-3 py-1.5 hover:bg-stone-50 disabled:opacity-50">{status === "saving" ? "Sending…" : "Send feedback"}</button>
+        </>}
+      </fieldset>
+      {status === "error" && <p role="alert" className="text-red-700">{error}</p>}
+    </form>
+  );
+}

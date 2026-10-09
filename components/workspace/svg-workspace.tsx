@@ -21,7 +21,7 @@ const welcome: ChatMessage = {
     "Describe an illustration, icon, or idea to create an SVG. After it’s ready, send a follow-up message to refine it.\n\nThe canvas starts with sample artwork for inspiration.",
 };
 
-export function SvgWorkspace() {
+export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([welcome]);
   const [document, setDocument] = useState<SvgDocument | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +34,7 @@ export function SvgWorkspace() {
   const resetDialog = useRef<HTMLDialogElement>(null);
   const keepWorking = useRef<HTMLButtonElement>(null);
   const activeRequest = useRef<AbortController | null>(null);
+  const conversationId = useRef<string | null>(null);
   const [retryInput, setRetryInput] = useState<GenerationRequest | null>(null);
   const retryAvailableAt = useRef(0);
   const [retrySeconds, setRetrySeconds] = useState(0);
@@ -123,7 +124,7 @@ export function SvgWorkspace() {
           setDocument(event.document);
           setPreview(null);
           setMessages(previous => previous.map(message => message.id === replyId
-            ? { ...message, content: event.message, usage: event.usage, runStatus: "completed" }
+            ? { ...message, content: event.message, usage: event.usage, feedbackToken: event.feedbackToken, runStatus: "completed" }
             : message));
           setRetryInput(null);
         }
@@ -177,6 +178,7 @@ export function SvgWorkspace() {
       { id: crypto.randomUUID(), role: "user", content },
     ];
     const input = generationRequestSchema.safeParse({
+      conversationId: conversationId.current ??= crypto.randomUUID(),
       messages: nextMessages
         .filter((message) => message.id !== "welcome" && !message.excludedFromContext && message.content.trim())
         .map(({ role, content }) => ({ role, content })),
@@ -196,6 +198,7 @@ export function SvgWorkspace() {
     resetDialog.current?.close();
     activeRequest.current?.abort();
     activeRequest.current = null;
+    conversationId.current = null;
     setRetryInput(null);
     retryAvailableAt.current = 0;
     setRetrySeconds(0);
@@ -228,6 +231,7 @@ export function SvgWorkspace() {
         isLoading={isLoading}
         progress={progress}
         activity={activity}
+        trackingEnabled={trackingEnabled}
         error={error}
         retrySeconds={retrySeconds}
         onRetry={
@@ -247,7 +251,7 @@ export function SvgWorkspace() {
       >
         <h2 id="reset-title" className="text-lg font-semibold">Start a new icon?</h2>
         <div id="reset-description" className="mt-3 space-y-3 text-sm leading-6 text-stone-600">
-          <p>This will permanently remove your current conversation, artwork, and any unsent message. This cannot be undone.</p>
+          <p>This will remove your current conversation, artwork, and any unsent message from this workspace. This cannot be undone.</p>
           {isLoading && <p>Generation is still running and will be canceled.</p>}
           {document && <p>To keep your icon, choose Keep working and download your SVG first.</p>}
         </div>

@@ -425,10 +425,87 @@ Cases are editable JSON, scorer functions are independent of Braintrust, and the
 task reuses production streamed generation. Basic scorers check completion, safe
 SVG, and tool protocol; the optional vision judge checks a fixed requirement
 list. Local results and accepted SVGs are saved to ignored `evaluations/runs/`.
-Tracing is enabled for eval runs only. Tests use mock responses; live fidelity,
+AI SDK telemetry is enabled for eval runs only; application tracking is configured
+separately below. Tests use mock responses; live fidelity,
 cloud upload, and real experiment traces have not been verified by setup alone.
 Read the [walkthrough](evals/README.md) for each part, extension examples, limits,
 and how to compare experiments.
+
+## Production tracking and user feedback
+
+Braintrust application logging is optional and off by default. In `.env.local`
+(and Vercel's server environment settings when deploying), set:
+
+```dotenv
+BRAINTRUST_API_KEY=<your Braintrust API key>
+BRAINTRUST_PROJECT=svg-ai-agent
+BRAINTRUST_TRACKING_ENABLED=true
+BRAINTRUST_FEEDBACK_SECRET=<a random secret of at least 32 characters>
+```
+
+Generate the feedback secret locally with `openssl rand -hex 32`; never paste
+keys into chat, commit them, or prefix them with `NEXT_PUBLIC_`. Restart the app
+after changing settings. The existing Braintrust package is now a production
+dependency because API routes use it. Missing API keys or a disabled flag turn
+application logging off; a missing/short feedback secret hides feedback controls
+while generation logging remains available. Eval uploads still require their
+separate `--braintrust` CLI flag.
+
+Each browser conversation gets a UUID on its first submission, retains it across
+edits and retries, and receives a fresh ID after New icon or reload. It stays out
+of the URL because there is no saved conversation to reopen. Requests without an
+ID (such as eval inputs) remain compatible; tracked requests get a server fallback.
+IDs group logs, not authorize access; client-supplied history and conversation IDs
+are untrusted. Clerk supplies the authenticated user ID on the server.
+
+In Braintrust, open the project's **Logs** (rather than Experiments) to inspect
+`svg-generation` traces. Filter metadata by `userId`, `conversationId`,
+`environment`, or `status`. Logs contain submitted message history and starting
+SVG, final independently validated artwork and explanation, model and summed
+token counts on successful runs, and bounded tool inputs/results including search
+queries and validation failures. Span duration records server run latency,
+including policy checking. Valid requests rejected by policy and failed/cancelled
+runs record safe errors/status; malformed or unauthenticated requests are not
+logged. Tool activity is stored in root metadata in this initial version, rather
+than separate model/tool spans. Partial previews, private reasoning, raw provider
+errors, emails, credentials, and feedback tokens are not logged. Failed runs do
+not currently report token usage; dollar cost is not calculated.
+
+Completed generations display thumbs up/down with an optional comment, and an
+optional reason for negative ratings. Sending feedback calls authenticated
+`POST /api/feedback`; Braintrust receives `user_satisfaction` (1 or 0), comment,
+and reason on the matching generation row through `logFeedback()`. A signed token
+binds that row to its original Clerk user and expires after seven days. Modifying
+the token, changing users, or rotating the signing secret invalidates it without
+requiring a database. Feedback is only offered for complete validated results.
+The UI disables repeat sends after success; resubmitting via the API updates the
+same rating rather than preserving every submission. This is not a quota system.
+
+Generation uploads are best effort and flushed through Next.js `after()` so a
+Braintrust outage does not break drawing. Feedback waits for upload and reports
+failure for retry rather than displaying false success. Braintrust's SDK can drop
+failed batches; there is no durable retry queue. Concurrent upload failures can
+conservatively report a feedback failure even if that feedback batch succeeded.
+The workspace displays a recording notice when tracking is enabled. Clearing the
+workspace does not delete Braintrust logs: configure retention/access in Braintrust
+separately. These logs support developer review, not user-facing conversation
+history. No online scorer or extra model call is enabled by this change; reviewed
+failures can later become eval cases.
+
+Implementation references: [Braintrust user feedback](https://www.braintrust.dev/docs/instrument/user-feedback)
+and [TypeScript SDK](https://www.braintrust.dev/docs/reference/libs/nodejs).
+
+Verification on October 9, 2026: 125 mocked tests, lint, TypeScript, and
+`npm run build -- --webpack` passed. Default Turbopack build attempts encountered
+restricted font access and then the existing CSS-worker port-binding restriction.
+An isolated browser harness using copies of the actual workspace components
+verified loading, positive/negative feedback, optional comments/reasons, failed
+feedback and successful retry, independent generation tokens, retained conversation
+IDs on edits/retries, a new ID after New icon, and no feedback for failed output.
+The harness made no model calls or Braintrust uploads and changed no production
+authentication route. Live Braintrust delivery and deployed behavior remain
+unverified; configure the environment above and check a real generation and rating
+in Logs before relying on production collection.
 
 ## Trust and usage limits
 

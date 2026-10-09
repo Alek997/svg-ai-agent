@@ -29,6 +29,12 @@ export type GenerateSvg = (
   onEvent?: (event: GenerationEvent) => void,
 ) => Promise<{ output: unknown; usage: GenerationUsage }>;
 
+export type GenerationObserver = {
+  event: (event: GenerationEvent) => void;
+  feedbackToken: () => string | undefined;
+  finish: () => void;
+};
+
 class RequestError extends Error {
   constructor(
     message: string,
@@ -97,6 +103,7 @@ export async function handleGeneration(
   generate: GenerateSvg,
   timeoutMs = GENERATION_TIMEOUT_MS,
   checkPolicy: (input: GenerationRequest, signal: AbortSignal) => Promise<void> = checkGenerationPolicy,
+  observe?: (input: GenerationRequest) => GenerationObserver | undefined,
 ) {
   let input: GenerationRequest;
   try {
@@ -112,6 +119,7 @@ export async function handleGeneration(
       { status: error instanceof RequestError ? error.status : 400 },
     );
   }
+  const observer = observe?.(input);
   const cancellation = new AbortController();
   const timeout = setTimeout(() => cancellation.abort(), timeoutMs);
   const signal = AbortSignal.any([request.signal, cancellation.signal]);
@@ -123,6 +131,8 @@ export async function handleGeneration(
   } catch (error) {
     clearTimeout(timeout);
     cancellation.abort();
+    observer?.event({ type: "error", message: error instanceof InputPolicyError ? error.message : "Input policy check unavailable." });
+    observer?.finish();
     return Response.json({
       error: error instanceof InputPolicyError ? error.message : "Unable to check this request right now. Please try again shortly.",
     }, {
@@ -136,6 +146,7 @@ export async function handleGeneration(
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: GenerationEvent) => {
+        observer?.event(event);
         if (!closed && !request.signal.aborted) {
           const chunk = encoder.encode(`${JSON.stringify(event)}\n`);
           // Snapshots are expendable; reserve room for the final SVG and errors.
@@ -170,6 +181,7 @@ export async function handleGeneration(
             type: "result",
             message: result.data.message,
             usage: generationUsageSchema.parse(raw.usage),
+            ...(observer?.feedbackToken() ? { feedbackToken: observer.feedbackToken() } : {}),
             document: {
               name: result.data.filename,
               description: result.data.message.slice(0, 1000),
@@ -188,6 +200,7 @@ export async function handleGeneration(
                 : "Generation failed. Check server configuration and API availability, then try again.",
         });
       } finally {
+        observer?.finish();
         cancellation.abort();
         clearTimeout(timeout);
         if (!closed) {
@@ -197,6 +210,7 @@ export async function handleGeneration(
       }
     },
     cancel() {
+      observer?.finish();
       closed = true;
       cancellation.abort();
       clearTimeout(timeout);

@@ -1,4 +1,5 @@
 import { RunDetails } from "./run-details";
+import { GenerationFeedback } from "./generation-feedback";
 import { Icon } from "@/components/ui/icon";
 import type { ChatMessage as Message } from "@/lib/workspace/types";
 
@@ -38,6 +39,7 @@ export function ChatMessage({ message }: { message: Message }) {
             </p>
           </div>
         )}
+        {isAssistant && message.runStatus === "completed" && message.feedbackToken && <GenerationFeedback token={message.feedbackToken} />}
       </div>
     </article>
   );

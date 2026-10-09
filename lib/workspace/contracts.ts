@@ -14,6 +14,7 @@ export const messageSchema = z
 
 export const generationRequestSchema = z
   .object({
+    conversationId: z.string().uuid().optional(),
     messages: z.array(messageSchema).min(1).max(20),
     currentSvg: z.string().min(1).max(MAX_SVG_LENGTH).optional(),
   })
@@ -123,6 +124,7 @@ export const generationEventSchema = z.discriminatedUnion("type", [
       message: z.string().trim().min(1).max(2000),
       document: svgDocumentSchema,
       usage: generationUsageSchema,
+      feedbackToken: z.string().max(1000).optional(),
     })
     .strict(),
   z

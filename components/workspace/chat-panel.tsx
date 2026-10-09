@@ -17,6 +17,7 @@ type ChatPanelProps = {
   progress: number;
   activity: string;
   error: string | null;
+  trackingEnabled?: boolean;
   onRetry?: () => void;
   retrySeconds?: number;
 };
@@ -33,6 +34,7 @@ export function ChatPanel({
   error,
   onRetry,
   retrySeconds = 0,
+  trackingEnabled = false,
 }: ChatPanelProps) {
   const history = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -66,7 +68,8 @@ export function ChatPanel({
       </div>
       <p className="border-b border-stone-200 bg-stone-50 px-5 py-3 text-[11px] leading-5 text-stone-600">
         One icon at a time. New icon, reloading, or leaving this page clears your
-        conversation and artwork permanently. Download your SVG first to keep it.
+        conversation and artwork from this workspace. Download your SVG first to keep it.
+        {trackingEnabled && <span className="mt-2 block">Prompts, generated artwork, and feedback are recorded to help improve SVG Studio. Avoid sharing sensitive information.</span>}
       </p>
       <div
         ref={history}
