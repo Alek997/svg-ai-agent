@@ -24,7 +24,7 @@ type ReplyCopy = Record<Exclude<ConversationIntent, "clarify"> | "clarifyCreate"
 
 const replies: Record<SupportedLanguage, ReplyCopy> = {
   en: {
-    greeting: "Hi! How’s it going?",
+    greeting: "Hi! I can create or edit an SVG for you.",
     thanks: "You’re welcome! Glad you like it.",
     farewell: "Goodbye! Take care.",
     acknowledge: "Got it.",
@@ -32,7 +32,7 @@ const replies: Record<SupportedLanguage, ReplyCopy> = {
     clarifyEdit: "What would you like to change in the artwork?",
   },
   sr_latn: {
-    greeting: "Ćao! Kako si?",
+    greeting: "Ćao! Mogu da ti generišem ili izmenim SVG.",
     thanks: "Nema na čemu! Drago mi je da ti se sviđa.",
     farewell: "Doviđenja! Sve najbolje.",
     acknowledge: "Važi.",
@@ -40,7 +40,7 @@ const replies: Record<SupportedLanguage, ReplyCopy> = {
     clarifyEdit: "Šta želiš da promeniš na ilustraciji?",
   },
   sr_cyrl: {
-    greeting: "Ћао! Како си?",
+    greeting: "Ћао! Могу да ти генеришем или изменим SVG.",
     thanks: "Нема на чему! Драго ми је да ти се свиђа.",
     farewell: "Довиђења! Све најбоље.",
     acknowledge: "Важи.",

@@ -602,6 +602,9 @@ server-owned replies keep casual turns bounded and unable to call tools. Replies
 Latin/Cyrillic. It covers greetings, thanks, farewells, acknowledgements and clarification
 with/without artwork. Add a language ID, its classifier criteria and complete reply copy
 in that file to extend it. Unsupported languages fall back to English.
+Greetings briefly offer SVG creation/editing, without social check-in questions that
+invite repeated small talk. Thanks and farewells remain brief closing replies;
+clarification questions stay focused on SVGs.
 This is a temporary approach: natural, context-aware conversations in many languages
 would require a dedicated, bounded conversation-model call after classification, with
 no SVG tools. The current approach adds one language question to the existing Decisions
