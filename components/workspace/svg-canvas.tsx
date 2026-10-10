@@ -78,7 +78,7 @@ export function SvgCanvas({
       aria-labelledby="canvas-title"
       className="flex min-h-0 min-w-0 flex-col"
     >
-      <div className="flex h-[65px] shrink-0 items-center justify-between border-b border-stone-200 bg-white px-5 sm:px-7">
+      <div className="flex min-h-[65px] shrink-0 flex-wrap items-center justify-between gap-4 border-b border-stone-200 bg-white px-5 py-3 sm:px-7">
         <div className="flex items-center gap-3">
           <h2 id="canvas-title" className="text-sm font-medium">
             Canvas
@@ -87,33 +87,36 @@ export function SvgCanvas({
             {isLoading ? "Generating…" : isSample ? "Sample" : "Generated"}
           </span>
         </div>
-        <div
-          className="flex gap-1 rounded-lg bg-stone-100 p-1"
-          role="group"
-          aria-label="Canvas view"
-        >
-          <Button
-            onClick={() => setView("preview")}
-            aria-pressed={view === "preview"}
-            variant="ghost"
-            className={
-              view === "preview" ? "bg-white text-stone-900 shadow-xs" : ""
-            }
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-4">
+          {publicId && !isLoading && <ShareSvg key={publicId} id={publicId} />}
+          <div
+            className="flex gap-1 rounded-lg bg-stone-100 p-1"
+            role="group"
+            aria-label="Canvas view"
           >
-            <Icon name="canvas" width={14} height={14} />
-            Preview
-          </Button>
-          <Button
-            onClick={() => setView("source")}
-            aria-pressed={view === "source"}
-            variant="ghost"
-            className={
-              view === "source" ? "bg-white text-stone-900 shadow-xs" : ""
-            }
-          >
-            <Icon name="code" width={14} height={14} />
-            Code
-          </Button>
+            <Button
+              onClick={() => setView("preview")}
+              aria-pressed={view === "preview"}
+              variant="ghost"
+              className={
+                view === "preview" ? "bg-white text-stone-900 shadow-xs" : ""
+              }
+            >
+              <Icon name="canvas" width={14} height={14} />
+              Preview
+            </Button>
+            <Button
+              onClick={() => setView("source")}
+              aria-pressed={view === "source"}
+              variant="ghost"
+              className={
+                view === "source" ? "bg-white text-stone-900 shadow-xs" : ""
+              }
+            >
+              <Icon name="code" width={14} height={14} />
+              Code
+            </Button>
+          </div>
         </div>
       </div>
       <div aria-busy={isLoading} className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12">
@@ -220,7 +223,6 @@ export function SvgCanvas({
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {publicId && !isLoading && <ShareSvg key={publicId} id={publicId} />}
           {isLoading ? (
             <Button disabled className="shrink-0">
               <Icon name="download" width={14} height={14} />

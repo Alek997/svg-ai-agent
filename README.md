@@ -149,7 +149,9 @@ foreign key connects it to a conversation through `messages.conversation_id`.
 Every restored SVG is safety-validated again before it reaches preview/download.
 
 Saved artwork has a public link at `/s/<publicId>`, such as `/s/K7m2pR9xBc_A`. The workspace offers
-**Copy public link** and **Public SVG** after saved state is confirmed. Anyone
+**Copy public link** and **Public SVG** beside the Preview/Code toggle after saved
+state is confirmed. The toolbar wraps on small screens; download stays in the
+footer. Anyone
 with a result's link can view and download it without signing in; this applies
 to existing saved results too. Links refer to a specific result, so later edits
 do not replace artwork behind an earlier link. The internal UUID remains unchanged;
