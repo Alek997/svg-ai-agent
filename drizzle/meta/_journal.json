@@ -8,6 +8,13 @@
       "when": 1791590973406,
       "tag": "0000_conversation_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791624552809,
+      "tag": "0001_public_svg_ids",
+      "breakpoints": true
     }
   ]
 }

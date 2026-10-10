@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { SvgDocument } from "@/lib/workspace/types";
+import { ShareSvg } from "./share-svg";
 
 export function SvgCanvas({
   document,
@@ -11,12 +12,14 @@ export function SvgCanvas({
   isLoading = false,
   hasPreview = false,
   activity = "Working…",
+  publicId = null,
 }: {
   document: SvgDocument;
   isSample?: boolean;
   isLoading?: boolean;
   hasPreview?: boolean;
   activity?: string;
+  publicId?: string | null;
 }) {
   const [view, setView] = useState<"preview" | "source">("preview");
   const [zoom, setZoom] = useState(100);
@@ -216,21 +219,24 @@ export function SvgCanvas({
             {document.width} × {document.height} · SVG
           </p>
         </div>
-        {isLoading ? (
-          <Button disabled className="shrink-0">
-            <Icon name="download" width={14} height={14} />
-            Download SVG
-          </Button>
-        ) : (
-          <a
-            ref={download}
-            download={document.name}
-            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
-          >
-            <Icon name="download" width={14} height={14} />
-            Download SVG
-          </a>
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {publicId && !isLoading && <ShareSvg key={publicId} id={publicId} />}
+          {isLoading ? (
+            <Button disabled className="shrink-0">
+              <Icon name="download" width={14} height={14} />
+              Download SVG
+            </Button>
+          ) : (
+            <a
+              ref={download}
+              download={document.name}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+            >
+              <Icon name="download" width={14} height={14} />
+              Download SVG
+            </a>
+          )}
+        </div>
       </footer>
     </section>
   );

@@ -97,10 +97,10 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
       return runDatabase(db => db.transaction(async tx => {
         const conversation = await owned(tx, ownerId, id);
         const rows = await tx.select({ message: messages, result: svgResults }).from(messages).leftJoin(svgResults, eq(svgResults.assistantMessageId, messages.id)).where(and(eq(messages.conversationId, id), before ? lt(messages.position, before) : undefined)).orderBy(desc(messages.position)).limit(MESSAGE_PAGE_SIZE + 1);
-        const [latest] = await tx.select({ document: svgResults.document }).from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).where(and(eq(messages.conversationId, id), eq(messages.status, "completed"))).orderBy(desc(messages.position)).limit(1);
+        const [latest] = await tx.select({ publicId: svgResults.publicId, document: svgResults.document }).from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).where(and(eq(messages.conversationId, id), eq(messages.status, "completed"))).orderBy(desc(messages.position)).limit(1);
         const selected = rows.slice(0, MESSAGE_PAGE_SIZE).reverse();
         return { conversation: { ...summary(conversation), revision: conversation.revision, activeRunId: conversation.activeRunId, leaseExpiresAt: conversation.leaseExpiresAt?.toISOString() ?? null },
-          messages: selected.map(row => chatMessageSchema.parse(hydrate(row.message, row.result))), document: latest ? safeDocument(latest.document) : null,
+          messages: selected.map(row => chatMessageSchema.parse(hydrate(row.message, row.result))), document: latest ? safeDocument(latest.document) : null, publicId: latest?.publicId ?? null,
           olderCursor: rows.length > MESSAGE_PAGE_SIZE ? selected[0].message.position : null };
       }));
     },

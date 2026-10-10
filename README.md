@@ -148,6 +148,45 @@ result rather than duplicating the document. An SVG result's unique assistant-me
 foreign key connects it to a conversation through `messages.conversation_id`.
 Every restored SVG is safety-validated again before it reaches preview/download.
 
+Saved artwork has a public link at `/s/<publicId>`, such as `/s/K7m2pR9xBc_A`. The workspace offers
+**Copy public link** and **Public SVG** after saved state is confirmed. Anyone
+with a result's link can view and download it without signing in; this applies
+to existing saved results too. Links refer to a specific result, so later edits
+do not replace artwork behind an earlier link. The internal UUID remains unchanged;
+no duplicate SVG storage is required. Migration `0001_public_svg_ids.sql` adds a
+required, unique `public_id` and backfills existing rows using its random database
+default. New results use the same default, including writes from the older app
+during deployment. It encodes nine bytes of a random UUID as twelve URL-safe
+characters (70 random bits after UUID variant bits). A unique index prevents
+ambiguous links; an extraordinarily unlikely collision fails the write rather
+than exposing another result. Existing `/s/<UUID>` links redirect to the short
+link; the legacy SVG API also continues to accept UUIDs.
+
+The separate public endpoint `/api/public/svgs/<publicId>` selects only `document.source`
+and repeats XML safety validation. It returns SVG markup with a generic filename,
+never the original prompt, conversation, owner, document description/name, usage,
+or feedback data. The page has generic metadata and renders the SVG through a Blob
+image. Text intentionally drawn inside the SVG is part of the shared artwork.
+Public reads use `Cache-Control: no-store` and discourage search indexing.
+
+Deleting a conversation cascades to its results. Missing, deleted, malformed-ID,
+and unsafe results show **SVG unavailable** with a **Go to SVG Studio** link;
+temporary storage failures offer **Try again**. Download rechecks storage to catch
+deletion after the page was opened. An already viewed/downloaded copy cannot be
+revoked. Links have no expiry or independent revocation control in this version.
+
+Sharing verification: lint, TypeScript checking and 176 unit tests passed. Browser
+checks used the real public/canvas components with mocked storage, confirming
+loading, preview, download contents, missing/unsafe results, retry controls,
+home navigation, copied-link feedback and deletion between preview and download.
+All 11 database integration tests passed on disposable PostgreSQL 16, including
+backfill of pre-migration artwork, default generation of new public IDs, legacy
+lookup, stable links after edits, and cascade deletion. The default Turbopack build
+was blocked by worker port binding restrictions in this environment; the production
+build passed with `npm run build -- --webpack`. Apply `npm run db:migrate` before
+deploying this code. The repository's existing Vercel Git integration publishes
+merges to `main`.
+
 API routes authenticate independently and send `Cache-Control: no-store`. Another
 user's ID returns the same 404 as an unknown ID. List/detail reads are paginated;
 client history responses have a 16 MB bound to account for SVG tool payloads.

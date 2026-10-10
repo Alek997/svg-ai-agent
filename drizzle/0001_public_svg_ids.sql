@@ -1,0 +1,3 @@
+ALTER TABLE "svg_results" ADD COLUMN "public_id" text DEFAULT translate(encode(substring(uuid_send(gen_random_uuid()) from 8 for 9), 'base64'), '+/', '-_') NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "svg_results_public_id" ON "svg_results" USING btree ("public_id");--> statement-breakpoint
+ALTER TABLE "svg_results" ADD CONSTRAINT "svg_results_public_id_format" CHECK ("svg_results"."public_id" ~ '^[A-Za-z0-9_-]{12}$');

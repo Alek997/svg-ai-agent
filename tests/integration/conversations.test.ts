@@ -11,6 +11,9 @@ import { conversations, messages, svgResults } from "../../lib/db/schema";
 import { applyEvent } from "../../lib/conversations/state";
 import { conversationPageSchema, type Submission } from "../../lib/conversations/contracts";
 import { createFeedbackToken } from "../../lib/ai/feedback-token";
+import { readPublicSvg, publicSvgResponse } from "../../lib/svg/public-result";
+import { resolvePublicId } from "../../lib/svg/public-result";
+import { publicIdSchema } from "../../lib/svg/public-id";
 
 // This suite intentionally requires a disposable database; it truncates its tables.
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -23,7 +26,19 @@ const doc = { name: "circle.svg", description: "Circle", source: '<svg xmlns="ht
 const usage = { model: "mock", inputTokens: 10, outputTokens: 20, cachedInputTokens: 0, totalTokens: 30 };
 before(async () => {
   await pool.query("DROP TABLE IF EXISTS svg_results, messages, conversations CASCADE");
-  for (const name of (await readdir("drizzle")).filter(name => name.endsWith(".sql")).sort()) await pool.query(await readFile(`drizzle/${name}`, "utf8"));
+  const legacyConversation = randomUUID(), legacyMessage = randomUUID(), legacyResult = randomUUID();
+  for (const name of (await readdir("drizzle")).filter(name => name.endsWith(".sql")).sort()) {
+    await pool.query(await readFile(`drizzle/${name}`, "utf8"));
+    if (name === "0000_conversation_persistence.sql") {
+      await pool.query("INSERT INTO conversations (id, owner_id, creation_request_id, title) VALUES ($1, 'legacy-owner', $2, 'Private prompt')", [legacyConversation, randomUUID()]);
+      await pool.query("INSERT INTO messages (id, conversation_id, position, role, status, details) VALUES ($1, $2, 1, 'assistant', 'completed', '{}')", [legacyMessage, legacyConversation]);
+      await pool.query("INSERT INTO svg_results (id, assistant_message_id, document) VALUES ($1, $2, $3)", [legacyResult, legacyMessage, JSON.stringify(doc)]);
+    }
+  }
+  const { rows } = await pool.query("SELECT id, public_id, document FROM svg_results WHERE id = $1", [legacyResult]);
+  assert.equal(rows[0].id, legacyResult);
+  assert.ok(publicIdSchema.safeParse(rows[0].public_id).success);
+  assert.deepEqual(rows[0].document, doc);
 });
 beforeEach(async () => { await pool.query("TRUNCATE svg_results, messages, conversations CASCADE"); });
 after(async () => { await pool.end(); });
@@ -34,6 +49,29 @@ async function complete(run: Awaited<ReturnType<typeof store.begin>>, owner = "u
   await store.save(owner, run, message, true, doc);
 }
 const notFound = (error: unknown) => error instanceof ConversationError && error.status === 404;
+
+test("public sharing exposes only SVG source and becomes unavailable after conversation deletion", async () => {
+  const conversation = await create();
+  const run = await store.begin("user_a", submit(conversation.id, 0));
+  await complete(run);
+  const page = await store.page("user_a", conversation.id);
+  assert.ok(page.publicId);
+  assert.ok(publicIdSchema.safeParse(page.publicId).success);
+  const [result] = await db.select().from(svgResults).where(eq(svgResults.assistantMessageId, run.assistantMessageId));
+  assert.equal(await resolvePublicId(result.id, runDatabase), page.publicId);
+  const read = (id: string) => readPublicSvg(id, runDatabase);
+  const response = await publicSvgResponse(page.publicId, read);
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), doc.source);
+  assert.equal(await (await publicSvgResponse(result.id, read)).text(), doc.source);
+  const next = await store.begin("user_a", submit(conversation.id, page.conversation.revision, "Make it blue"));
+  await complete(next);
+  const updated = await store.page("user_a", conversation.id);
+  assert.notEqual(updated.publicId, page.publicId);
+  assert.equal((await publicSvgResponse(page.publicId, read)).status, 200);
+  await db.delete(conversations).where(eq(conversations.id, conversation.id));
+  assert.equal((await publicSvgResponse(page.publicId, read)).status, 404);
+});
 
 test("owner isolation applies to lists, reads, claims and writes", async () => {
   const conversation = await create();

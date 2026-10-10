@@ -19,5 +19,7 @@ export const messages = pgTable("messages", {
   check("messages_role", sql`${table.role} in ('user', 'assistant')`), check("messages_status", sql`${table.status} in ('running', 'completed', 'error', 'interrupted')`)]);
 export const svgResults = pgTable("svg_results", {
   id: uuid().primaryKey(), assistantMessageId: uuid("assistant_message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  publicId: text("public_id").notNull().default(sql`translate(encode(substring(uuid_send(gen_random_uuid()) from 8 for 9), 'base64'), '+/', '-_')`),
   document: jsonb().$type<SvgDocument>().notNull(), createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
-}, table => [uniqueIndex("svg_results_assistant").on(table.assistantMessageId)]);
+}, table => [uniqueIndex("svg_results_assistant").on(table.assistantMessageId), uniqueIndex("svg_results_public_id").on(table.publicId),
+  check("svg_results_public_id_format", sql`${table.publicId} ~ '^[A-Za-z0-9_-]{12}$'`)]);
