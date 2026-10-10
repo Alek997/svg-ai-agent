@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_PROMPT_LENGTH, svgDocumentSchema, stepTraceSchema, toolTraceSchema, generationUsageSchema } from "../workspace/contracts";
+import { publicIdSchema } from "../svg/public-id";
 
 export const RUN_LEASE_MS = 330_000;
 export const MESSAGE_PAGE_SIZE = 10;
@@ -51,6 +52,7 @@ export const conversationPageSchema = z.object({
   conversation: conversationSummarySchema.extend({ revision: z.number().int().nonnegative(), activeRunId: z.string().uuid().nullable(), leaseExpiresAt: z.string().datetime().nullable() }),
   messages: z.array(chatMessageSchema).max(MESSAGE_PAGE_SIZE),
   document: svgDocumentSchema.nullable(), olderCursor: z.number().int().positive().nullable(),
+  publicId: publicIdSchema.nullable(),
 }).strict();
 export const conversationListSchema = z.object({ conversations: z.array(conversationSummarySchema.extend({ document: svgDocumentSchema.nullable().optional() })).max(20), nextCursor: z.string().nullable() }).strict();
 export type ConversationPage = z.infer<typeof conversationPageSchema>;
