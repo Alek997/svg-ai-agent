@@ -17,6 +17,6 @@ export function ShareSvg({ id }: { id: string }) {
       <a href={path} target="_blank" rel="noopener noreferrer" className="text-xs text-stone-600 hover:underline">Public SVG</a>
       <Button onClick={() => void copy()}>{status === "copied" ? "Link copied!" : "Copy public link"}</Button>
     </div>
-    <p role="status" className="max-w-60 text-right text-[10px] text-stone-500">{status === "error" ? "Open Public SVG and copy its address." : "Anyone with the link can view and download the SVG."}</p>
+    <p role="status" className="max-w-60 text-right text-[10px] text-stone-500">{status === "error" ? "Open Public SVG and copy its address." : "Anyone with this link can view and download."}</p>
   </div>;
 }
