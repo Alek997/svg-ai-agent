@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Neon uses ws on the server; preserve its native optional-module loading.
+  serverExternalPackages: ["ws"],
 };
 
 export default nextConfig;

@@ -187,6 +187,13 @@ build passed with `npm run build -- --webpack`. Apply `npm run db:migrate` befor
 deploying this code. The repository's existing Vercel Git integration publishes
 merges to `main`.
 
+Next.js loads `ws` as an external server package so its optional native modules
+keep their Node.js loading behavior. Bundling it caused a `mask is not a function`
+failure in the production webpack build. With this setting, the built app was
+verified against the configured Neon database: backfilled short links rendered
+artwork, UUID pages returned a 307 redirect, SVG reads returned 200 with `no-store`,
+and missing-result reads returned 404. No live model call was needed.
+
 API routes authenticate independently and send `Cache-Control: no-store`. Another
 user's ID returns the same 404 as an unknown ID. List/detail reads are paginated;
 client history responses have a 16 MB bound to account for SVG tool payloads.
