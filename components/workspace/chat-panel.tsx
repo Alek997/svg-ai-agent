@@ -90,9 +90,9 @@ export function ChatPanel({
         aria-live="polite"
         className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5"
       >
-        <p className="text-center text-[10px] uppercase tracking-[0.15em] text-stone-400">
+        {!currentId && <p className="text-center text-[10px] uppercase tracking-[0.15em] text-stone-400">
           A little inspiration goes a long way
-        </p>
+        </p>}
         {olderCursor && <button type="button" onClick={onLoadOlder} disabled={loadingOlder} className="block w-full text-xs text-stone-500 underline">{loadingOlder ? "Loading…" : "Load earlier messages"}</button>}
         {messages.map((message) => (
           <ChatMessage key={message.id} message={message} />
@@ -102,7 +102,7 @@ export function ChatPanel({
             {activity}{progress > 0 ? ` · ${progress.toLocaleString()} characters` : ""}
           </p>
         )}
-        {messages.length === 1 && !isLoading && (
+        {!currentId && messages.length === 1 && messages[0].id === "welcome" && !isLoading && (
           <div className="ml-10 space-y-2 pt-2">
             <p className="mb-3 text-[11px] text-stone-400">Try starting with</p>
             {[

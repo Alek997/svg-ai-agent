@@ -22,9 +22,9 @@ export function WorkspaceHeader() {
         </div>
       </div>
       <div className="flex items-center gap-4">
-        <span className="hidden rounded-full border border-stone-200 px-3 py-1.5 text-xs text-stone-500 sm:block">
-          Your creative workspace
-        </span>
+        {/* Full navigation triggers the workspace's beforeunload draft/run guard. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a href="/conversations" className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50">My SVGs</a>
         <UserButton />
       </div>
     </header>

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { withDatabase } from "../db/client";
 import { conversations, messages, svgResults } from "../db/schema";
@@ -76,7 +76,7 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
         return { ...summary(existing), revision: existing.revision };
       });
     },
-    async list(ownerId: string, cursor?: string) {
+    async list(ownerId: string, cursor?: string, includeArtwork = false) {
       let before: z.infer<typeof cursorSchema> | undefined;
       if (cursor) {
         try { before = cursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString())); }
@@ -84,7 +84,11 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
       }
       return runDatabase(async db => {
         const rows = await db.select().from(conversations).where(and(eq(conversations.ownerId, ownerId), before ? or(lt(conversations.updatedAt, new Date(before.updatedAt)), and(eq(conversations.updatedAt, new Date(before.updatedAt)), lt(conversations.id, before.id))) : undefined)).orderBy(desc(conversations.updatedAt), desc(conversations.id)).limit(21);
-        const page = rows.slice(0, 20).map(summary);
+        const selected = rows.slice(0, 20);
+        // One additional query for the whole page, rather than one per card.
+        const artwork = includeArtwork && selected.length ? await db.selectDistinctOn([messages.conversationId], { conversationId: messages.conversationId, document: svgResults.document }).from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).where(and(inArray(messages.conversationId, selected.map(row => row.id)), eq(messages.status, "completed"))).orderBy(messages.conversationId, desc(messages.position)) : [];
+        const documents = new Map(artwork.map(row => [row.conversationId, safeDocument(row.document)]));
+        const page = selected.map(row => ({ ...summary(row), ...(includeArtwork ? { document: documents.get(row.id) ?? null } : {}) }));
         const last = page.at(-1);
         return { conversations: page, nextCursor: rows.length > 20 && last ? Buffer.from(JSON.stringify({ updatedAt: last.updatedAt, id: last.id })).toString("base64url") : null };
       });

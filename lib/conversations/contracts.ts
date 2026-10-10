@@ -52,5 +52,5 @@ export const conversationPageSchema = z.object({
   messages: z.array(chatMessageSchema).max(MESSAGE_PAGE_SIZE),
   document: svgDocumentSchema.nullable(), olderCursor: z.number().int().positive().nullable(),
 }).strict();
-export const conversationListSchema = z.object({ conversations: z.array(conversationSummarySchema).max(20), nextCursor: z.string().nullable() }).strict();
+export const conversationListSchema = z.object({ conversations: z.array(conversationSummarySchema.extend({ document: svgDocumentSchema.nullable().optional() })).max(20), nextCursor: z.string().nullable() }).strict();
 export type ConversationPage = z.infer<typeof conversationPageSchema>;

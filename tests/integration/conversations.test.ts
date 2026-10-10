@@ -118,7 +118,23 @@ test("invalid stored SVGs never restore or reach generation", async () => {
   await db.update(svgResults).set({ document: { ...doc, source: "<svg><script/></svg>" } }).where(eq(svgResults.assistantMessageId, run.assistantMessageId));
   await assert.rejects(() => store.page("user_a", conversation.id));
   await assert.rejects(() => store.begin("user_a", submit(conversation.id, 1, "Make it blue")));
+  await assert.rejects(() => store.list("user_a", undefined, true));
   assert.equal((await db.select().from(messages)).length, 2);
+});
+test("gallery lists the latest completed SVG, empty conversations and only the owner's artwork", async () => {
+  const empty = await create();
+  const conversation = await create();
+  const first = await store.begin("user_a", submit(conversation.id, 0)); await complete(first);
+  const second = await store.begin("user_a", submit(conversation.id, 1, "Make it blue"));
+  const blue = { ...doc, name: "blue.svg", source: doc.source.replace('r="30"', 'r="30" fill="blue"') };
+  await store.save("user_a", second, applyEvent(second.message, { type: "result", message: "Blue circle", document: blue, usage }), true, blue);
+  const failed = await store.begin("user_a", submit(conversation.id, 2, "Try another"));
+  await store.save("user_a", failed, applyEvent(failed.message, { type: "error", message: "Failed" }), true);
+  const gallery = await store.list("user_a", undefined, true);
+  assert.deepEqual(gallery.conversations.find(item => item.id === conversation.id)?.document, blue);
+  assert.equal(gallery.conversations.find(item => item.id === empty.id)?.document, null);
+  assert.equal((await store.list("user_b", undefined, true)).conversations.length, 0);
+  assert.ok((await store.list("user_a")).conversations.every(item => !("document" in item)));
 });
 test("feedback is owned, persisted and rejects expired tokens", async () => {
   const secret = "x".repeat(32); const old = process.env.BRAINTRUST_FEEDBACK_SECRET; process.env.BRAINTRUST_FEEDBACK_SECRET = secret;

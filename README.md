@@ -65,6 +65,15 @@ retry. The labeled **New icon** action opens a fresh workspace; saved conversati
 remain in **Saved conversations**. The history list uses automatic titles from
 first prompts and supports pagination. Reopening a conversation restores its latest
 artwork, text, ordered Details timeline, errors, usage, and submitted feedback state.
+The header's **My SVGs** link opens `/conversations`, a paginated gallery with each
+conversation's latest completed SVG, title, filename, and update date. Cards reopen
+the saved workspace; conversations without artwork remain accessible too. The
+gallery has loading skeletons, an empty state, and retryable request errors. SVG
+thumbnails use validated Blob images and are fetched only for gallery requests.
+Saved workspace URLs show skeletons for both artwork and messages while loading,
+including the route's server loading boundary. Starter artwork, welcome text, and
+prompt suggestions appear only in a new workspace. Saved conversations without
+an SVG show an empty canvas instead of the starter image.
 Earlier messages can be loaded in pages of ten. Intermediate SVG preview sources,
 unsent drafts, and expanded/collapsed controls are temporary.
 
@@ -192,6 +201,12 @@ without horizontal overflow. Refreshing a saved conversation now retains an unse
 draft. No console warnings or errors were observed in that pass; the 169 mocked
 tests, lint, and Webpack build passed again after the fix.
 This does not verify a live Neon connection, Clerk session, model call, or deployment.
+The gallery/loading follow-up passed the same 169 mocked tests and 10 local
+PostgreSQL integration tests. Built-in browser checks covered delayed loading with
+no starter-content flash, gallery-to-workspace navigation, empty saved canvases,
+23 conversations across two pages, failed gallery requests followed by successful
+retry, and mobile layout without horizontal overflow. These checks used the same
+temporary mock-auth/model harness, rather than a live Clerk session.
 
 ## Authentication
 

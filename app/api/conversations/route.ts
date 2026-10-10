@@ -12,6 +12,9 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   const { userId } = await auth();
   if (!userId) return jsonResponse({ error: "Please sign in to view conversations." }, 401);
-  try { return jsonResponse(await conversationStore.list(userId, new URL(request.url).searchParams.get("cursor") ?? undefined)); }
+  try {
+    const params = new URL(request.url).searchParams;
+    return jsonResponse(await conversationStore.list(userId, params.get("cursor") ?? undefined, params.get("artwork") === "true"));
+  }
   catch (error) { return conversationErrorResponse(error); }
 }

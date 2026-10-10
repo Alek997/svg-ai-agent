@@ -32,8 +32,11 @@ export async function loadConversation(id: string, signal?: AbortSignal, before?
     return message.runStatus === "running" ? hydrated : { ...hydrated, ...finishDetails(hydrated) };
   }) };
 }
-export function listConversations(signal?: AbortSignal, cursor?: string) {
-  return fetchConversationJson(`/api/conversations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, conversationListSchema, { signal });
+export function listConversations(signal?: AbortSignal, cursor?: string, includeArtwork = false) {
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor", cursor);
+  if (includeArtwork) params.set("artwork", "true");
+  return fetchConversationJson(`/api/conversations${params.size ? `?${params}` : ""}`, conversationListSchema, { signal });
 }
 export function createConversation(requestId: string, content: string, signal: AbortSignal) {
   return fetchConversationJson("/api/conversations", conversationSummarySchema.extend({ revision: z.number().int().nonnegative() }), {

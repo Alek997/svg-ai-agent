@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ChatPanel } from "./chat-panel";
 import { Button } from "@/components/ui/button";
 import { SvgCanvas } from "./svg-canvas";
+import { EmptySavedCanvas, WorkspaceSkeleton } from "./workspace-loading";
 import { sampleDocument } from "@/lib/workspace/sample";
 import { submissionSchema, type Submission, type ConversationPage, RUN_LEASE_MS } from "@/lib/conversations/contracts";
 import { createConversation, loadConversation } from "@/lib/conversations/client";
@@ -17,10 +18,11 @@ const welcome: ChatMessage = { id: "welcome", role: "assistant", content: "Descr
 export function SvgWorkspace({ trackingEnabled = false, initialConversationId }: { trackingEnabled?: boolean; initialConversationId?: string }) {
   const pathname = usePathname();
   const routeId = pathname.startsWith("/conversations/") ? pathname.split("/")[2] : null;
-  const [messages, setMessages] = useState<ChatMessage[]>([welcome]);
+  const [messages, setMessages] = useState<ChatMessage[]>(initialConversationId ? [] : [welcome]);
   const [document, setDocument] = useState<SvgDocument | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [opening, setOpening] = useState(!!initialConversationId);
+  const [displayedId, setDisplayedId] = useState<string | null>(null);
   const [ready, setReady] = useState(!initialConversationId);
   const [activeSavedRun, setActiveSavedRun] = useState<string | null>(null);
   const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null);
@@ -48,8 +50,9 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
 
   function restore(page: ConversationPage, merge = false) {
     conversationId.current = page.conversation.id;
+    setDisplayedId(page.conversation.id);
     revision.current = page.conversation.revision;
-    setMessages(previous => merge ? [welcome, ...[...previous.filter(message => message.id !== "welcome" && message.position && !page.messages.some(saved => saved.id === message.id)), ...page.messages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))] : [welcome, ...page.messages]);
+    setMessages(previous => merge ? [...previous.filter(message => message.id !== "welcome" && message.position && !page.messages.some(saved => saved.id === message.id)), ...page.messages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)) : page.messages);
     setDocument(page.document); setPreview(null); setActiveSavedRun(page.conversation.activeRunId); setLeaseExpiresAt(page.conversation.leaseExpiresAt);
     if (!merge) setOlderCursor(page.olderCursor);
     setReady(true);
@@ -71,11 +74,13 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
       setIsLoading(false); setIsGenerating(false); setProgress(0); setActivity("Starting generation…");
       setPreview(null); setReady(false); setError(null); setRetryInput(null); setRetrySeconds(0);
       if (routeId !== conversationId.current) {
-        setDraft(""); setMessages([welcome]); setDocument(null); setOlderCursor(null); setActiveSavedRun(null); setLeaseExpiresAt(null);
+        setDraft(""); setMessages([]); setDocument(null); setOlderCursor(null); setActiveSavedRun(null); setLeaseExpiresAt(null);
         conversationId.current = null;
+        setDisplayedId(null);
       }
       if (!routeId) {
         conversationId.current = null; revision.current = 0; pendingCreation.current = null;
+        setDisplayedId(null);
         setDraft(""); setMessages([welcome]); setDocument(null); setOlderCursor(null); setActiveSavedRun(null); setLeaseExpiresAt(null); setOpening(false); setReady(true);
         return;
       }
@@ -124,7 +129,7 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
     try {
       const page = await loadConversation(id, undefined, olderCursor);
       if (conversationId.current !== id) return;
-      setMessages(previous => [welcome, ...page.messages.filter(message => !previous.some(saved => saved.id === message.id)), ...previous.filter(message => message.id !== "welcome")]);
+      setMessages(previous => [...page.messages.filter(message => !previous.some(saved => saved.id === message.id)), ...previous.filter(message => message.id !== "welcome")]);
       setOlderCursor(page.olderCursor);
     } catch (error) { setError(error instanceof Error ? error.message : "Earlier messages could not be loaded."); }
     finally { setLoadingOlder(false); }
@@ -190,6 +195,7 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
         const saved = await createConversation(pendingCreation.current.id, trimmed, controller.signal);
         if (activeRequest.current !== controller) return;
         conversationId.current = saved.id; revision.current = saved.revision;
+        setDisplayedId(saved.id);
         window.history.replaceState(null, "", `/conversations/${saved.id}`);
         setHistoryRefresh(value => value + 1);
       } catch (error) { if (activeRequest.current === controller) { setDraft(trimmed); setError(error instanceof Error ? error.message : "Conversation could not be saved."); } return; }
@@ -198,15 +204,16 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
     const parsed = submissionSchema.safeParse({ kind: "message", conversationId: conversationId.current, content: trimmed, requestId: crypto.randomUUID(), expectedRevision: revision.current });
     if (!parsed.success) { setError("Your message could not be submitted."); setDraft(trimmed); return; }
     const userId = crypto.randomUUID();
-    setMessages(previous => [...previous, { id: userId, role: "user", content: trimmed }]);
+    setMessages(previous => [...previous.filter(message => message.id !== "welcome"), { id: userId, role: "user", content: trimmed }]);
     void generate(parsed.data, userId);
   }
   function retry() {
     if (!retryInput || Date.now() < retryAvailableAt.current) return;
     void generate(retryInput.kind === "retry" ? { ...retryInput, expectedRevision: revision.current } : retryInput);
   }
+  if (opening || (routeId && routeId !== displayedId && !error)) return <WorkspaceSkeleton />;
   return <div className="grid grid-cols-1 flex-1 lg:h-[calc(100dvh-76px)] lg:flex-none lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px]">
-    <SvgCanvas document={preview ?? document ?? sampleDocument} hasPreview={!!preview} activity={activity} isSample={!document} isLoading={isGenerating} />
+    {routeId && !document && !preview ? <EmptySavedCanvas isLoading={isLoading} activity={activity} /> : <SvgCanvas document={preview ?? document ?? sampleDocument} hasPreview={!!preview} activity={activity} isSample={!document} isLoading={isGenerating} />}
     <ChatPanel messages={messages} onSend={content => void sendMessage(content)} onReset={() => navigate("/")} draft={draft} onDraftChange={setDraft}
       isLoading={isLoading || opening || !!activeSavedRun || !ready} progress={progress} activity={opening ? "Opening saved conversation…" : activeSavedRun && !isLoading ? "An earlier generation is still active. Refresh its status or wait for recovery." : activity}
       trackingEnabled={trackingEnabled} error={error} retrySeconds={retrySeconds} onRetry={error && retryInput ? retry : undefined}
