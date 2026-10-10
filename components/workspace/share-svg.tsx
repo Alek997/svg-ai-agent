@@ -12,11 +12,9 @@ export function ShareSvg({ id }: { id: string }) {
       setStatus("copied");
     } catch { setStatus("error"); }
   }
-  return <div className="flex flex-col items-end gap-1">
-    <div className="flex items-center gap-2">
-      <a href={path} target="_blank" rel="noopener noreferrer" className="text-xs text-stone-600 hover:underline">Public SVG</a>
-      <Button onClick={() => void copy()}>{status === "copied" ? "Link copied!" : "Copy public link"}</Button>
-    </div>
-    <p role="status" className="max-w-60 text-right text-[10px] text-stone-500">{status === "error" ? "Open Public SVG and copy its address." : "Anyone with this link can view and download."}</p>
+  return <div className="relative flex h-10 items-center gap-2">
+    <a href={path} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center text-xs text-stone-600 hover:underline">Public SVG</a>
+    <Button className="h-10 min-w-[116px]" onClick={() => void copy()}>{status === "copied" ? "Link copied!" : "Copy public link"}</Button>
+    {status === "error" && <p role="alert" className="absolute top-full right-0 z-20 mt-2 w-60 rounded-lg border border-stone-200 bg-white p-3 text-xs text-stone-600 shadow-sm">Open Public SVG and copy its address.</p>}
   </div>;
 }
