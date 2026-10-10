@@ -4,8 +4,10 @@ Turn a text prompt into a clean SVG, with a browser preview and conversation sid
 
 ## Current behavior
 
-Sending a chat message makes `POST /api/generate` with user/assistant history
-and, for edits, the current validated SVG. After sign-in and request validation,
+Sending a chat message creates a conversation on first submission, then makes
+`POST /api/generate` with its ID, the new prompt, an idempotency request ID, and the
+expected conversation revision. The server loads history and the latest SVG from
+Neon PostgreSQL. After sign-in and request validation,
 server-side input policy checks classify the turn before streaming or tools start (see
 the policy section below). Greetings, thanks, farewells and neutral acknowledgements
 receive a short text-only reply through the same endpoint. Unclear artwork requests
@@ -53,28 +55,25 @@ run and finish. Validation results show their returned valid flag and error;
 failed requests retain the partial timeline and final error. Private model reasoning and raw provider metadata are
 not exposed. Existing tool-only records remain available, but older unrecorded
 model steps cannot be reconstructed.
-These display records are retained in browser memory with the reply and are not
-included in subsequent model message history. Only the server-owned tools'
+These display records are persisted with the reply and restored when reopening
+its URL. They are not included in subsequent model message history. Only the server-owned tools'
 bounded inputs/results are forwarded; raw provider errors are never shown.
 Temporary previews are separate from the saved document. Download and copy are
 disabled during generation; only a complete validated result replaces the saved
 SVG. Failed requests discard the draft, retain the last completed SVG, and offer
-retry. The labeled **New icon** action starts a fresh conversation. If there is
-history, artwork, a running request, or a nonempty draft, it first opens a native
-modal explaining that discarding the current workspace cannot be undone. **Keep
-working** receives focus; Escape also cancels. Confirming **Discard and start new**
-cancels generation and clears the conversation, artwork, draft, error, and retry
-state. An empty workspace resets without a confirmation.
+retry. The labeled **New icon** action opens a fresh workspace; saved conversations
+remain in **Saved conversations**. The history list uses automatic titles from
+first prompts and supports pagination. Reopening a conversation restores its latest
+artwork, text, ordered Details timeline, errors, usage, and submitted feedback state.
+Earlier messages can be loaded in pages of ten. Intermediate SVG preview sources,
+unsent drafts, and expanded/collapsed controls are temporary.
 
-A permanent note explains the one-icon limit and recommends downloading before
-resetting or reloading. A `beforeunload` listener is attached only while there is
-work to lose, requesting the browser's reload/close/navigation confirmation.
-Browsers control that dialog's text and may omit it in some situations, especially
-on mobile; it is a guard, not persistence. See
-[MDN's beforeunload limitations](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event).
-Draft state lives in the workspace so an unsent message receives the same protection.
-The native `<dialog>` provides modal focus containment and Escape behavior without
-adding a dialog dependency.
+Navigation inside the workspace asks for confirmation only for unsent drafts or
+active generation. A `beforeunload` guard covers those same cases; browser-controlled
+dialogs may be omitted on mobile. Leaving interrupts generation. Accepted messages
+and checkpointed run details survive; the previous completed artwork remains usable.
+An unfinished run is recovered on the next read/write after its 330-second lease
+expires. **Refresh saved conversation** checks its current state without polling.
 
 The preview uses a Blob URL in an image element, never inline markup injection.
 Its URL changes only when the exact SVG source changes. Finalizing an unchanged
@@ -87,11 +86,11 @@ provider-reported token usage summed across all steps, including history and too
 results. Missing counts show Unknown. Failed requests do not show incurred usage.
 No dollar cost is calculated. The model label is read-only.
 
-History and artwork live in browser memory and reset on reload. `currentSvg` still
-travels from browser to server on edit requests; eliminating that transfer would
-require persisted, authenticated document storage. Revision counters reset per
-request and are not cross-request concurrency control. Requests run sequentially
-in the UI. No image-generation or visual-inspection model is used.
+History and artwork are server-owned. URLs use server-generated UUIDs, and every
+resource read/write checks Clerk ownership. One generation can claim a conversation
+at a time; revision checks prevent conflicting submissions across tabs. Tool revision
+counters still reset per model request. No image-generation or visual-inspection
+model is used.
 
 Progressive preview is an approximation: unfinished paths, text, and elements do
 not appear until a completed-element checkpoint is available; unfinished gradients,
@@ -99,9 +98,105 @@ masks and clipping definitions can change the appearance of later snapshots.
 The model may redraw a full revision rather than emit small patches. A malformed
 later chunk retains the previous safe preview; it cannot produce a final success.
 
+## Conversation persistence and Neon setup
+
+Use a Neon PostgreSQL database/branch for development and a separate one for
+production. Keep Clerk; no duplicate user table or Clerk synchronization webhook
+is needed. Store Clerk's opaque user ID as `owner_id`, obtained only on the server.
+
+1. Create a Neon project and copy its PostgreSQL connection string into
+   `DATABASE_URL` in `.env.local` (see `.env.example`). Never paste credentials into
+   chat or use a `NEXT_PUBLIC_` prefix.
+2. Run `npm run db:migrate` to apply the committed SQL migrations. The config loads
+   `.env.local`; a missing connection string must be configured before migration.
+3. Run `npm run dev`, sign in, and submit a prompt. Its URL becomes
+   `/conversations/<server-generated-uuid>`. Reload and continue with an edit.
+4. Set the production connection string in Vercel, apply migrations explicitly
+   against that database, then deploy. Builds and API requests never run migrations.
+
+`drizzle-orm` provides typed SQL and short PostgreSQL transactions; `drizzle-kit`
+generates reviewable migration files. After changing `lib/db/schema.ts`, run
+`npm run db:generate`, review the generated SQL, then migrate. The Neon serverless
+WebSocket driver supports the row-locking transactions used for claims and writes.
+Database pools are scoped to a database operation and closed after it completes;
+no transaction stays open during model generation.
+
+```text
+Clerk auth() → owner ID
+Conversation → ordered messages → assistant message → zero/one final SVG result
+New prompt + IDs → owned conversation claim → server-built context → existing agent
+Stream → serialized checkpoints → final SVG validation → DB commit → success
+```
+
+The three tables are `conversations`, `messages`, and `svg_results`. Scalar columns
+support ownership, chronology, concurrency and pagination. Versioned Zod-validated
+JSONB stores bounded display details. A final timeline entry references its SVG
+result rather than duplicating the document. An SVG result's unique assistant-message
+foreign key connects it to a conversation through `messages.conversation_id`.
+Every restored SVG is safety-validated again before it reaches preview/download.
+
+API routes authenticate independently and send `Cache-Control: no-store`. Another
+user's ID returns the same 404 as an unknown ID. List/detail reads are paginated;
+client history responses have a 16 MB bound to account for SVG tool payloads.
+The server accepts one run per conversation, deduplicates request IDs, and uses
+expected revisions to reject conflicting tabs. Retries create new assistant attempts
+for the same user prompt. Only the latest failed, retryable attempt can be retried.
+Policy-rejected prompts remain visible, but are excluded from future context.
+
+Before generation, both the user message and assistant placeholder must commit.
+During generation, ordered display updates checkpoint no more than once per second
+when events arrive; completion flushes immediately. A result is successful only after
+its final database commit. If the browser disconnects, accepted messages survive;
+partial details since the last checkpoint can be lost. Hard-killed processes leave
+running records until the 330-second lease is reconciled on a later read/write.
+A failed final save reports an error and retains the previous completed artwork.
+There is no detached job or reconnectable live stream in this version.
+
+Unsaved conversations from the former browser-only implementation cannot be
+recovered. Drafts and intermediate preview sources are not persisted. Conversation
+renaming, deletion, message editing and branching are deferred. Saved records do
+not automatically expire. Storage and compute quotas still apply: measure actual
+conversation sizes rather than treating the free plan as a fixed user allowance.
+
+Future RAG can add Upstash Vector as a rebuildable index with references to Neon
+records. Neon remains authoritative, and private retrieval must check ownership.
+No vector indexing, embedding calls, or Redis dependency is added here.
+
+Verification commands:
+
+```sh
+npm test
+npm run lint
+npm run build
+# Disposable PostgreSQL database only: this test suite creates/truncates its tables.
+TEST_DATABASE_URL=postgresql://<user>:<password>@<host>/svg_conversations_test npm run test:db
+```
+
+The integration suite requires a database whose name starts with
+`svg_conversations_test`. It exercises real transactions, ownership, duplicate
+requests, concurrent claims, restoration, recovery, pagination and feedback expiry.
+Model responses remain mocked; no API credits are spent by these tests.
+
+Verification on October 10, 2026: 169 mocked tests and 9 real local PostgreSQL
+integration tests passed, including concurrent claims and timestamp-tie pagination.
+The migration command was exercised on disposable local databases. Lint, TypeScript,
+and the Webpack production build passed. The default Turbopack build was blocked by
+environment restrictions on font downloads/worker port binding. Browser checks used
+actual workspace components, a temporary PostgreSQL database, a mock model, and a
+navigation adapter: loading, reload/direct URL restoration, continued edits, history,
+invalid output, policy rejection, interrupted runs, and a downloaded SVG were checked.
+An additional built-in browser pass verified successful retries after transient
+failures, active-run blocking in another tab, stale-revision reconciliation with
+draft preservation, browser Back navigation, SVG source view, and mobile layout
+without horizontal overflow. Refreshing a saved conversation now retains an unsent
+draft. No console warnings or errors were observed in that pass; the 169 mocked
+tests, lint, and Webpack build passed again after the fix.
+This does not verify a live Neon connection, Clerk session, model call, or deployment.
+
 ## Authentication
 
-Clerk manages sessions and accounts; no application database is needed. The
+Clerk manages sessions and accounts; Neon stores application data associated with
+the server-authenticated Clerk user ID. The
 workspace checks `await auth.protect()` on the server, and `/api/generate` checks
 `await auth()` before starting generation, returning JSON with HTTP 401 when
 unauthenticated. `proxy.ts` initializes Clerk for pages, API routes, and `/__clerk`.
@@ -257,28 +352,36 @@ ChatComposer → SvgWorkspace → POST /api/generate
   → result event → assistant history + SVG image preview/download
 ```
 
-Example request (UI-only message IDs and the welcome message are excluded):
+Example public request (the server loads history and current SVG):
 
 ```json
 {
-  "messages": [
-    { "role": "user", "content": "Draw a mountain" },
-    { "role": "assistant", "content": "Created a mountain illustration." },
-    { "role": "user", "content": "Add a sun" }
-  ],
-  "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">...</svg>"
+  "kind": "message",
+  "conversationId": "00000000-0000-4000-8000-000000000001",
+  "content": "Add a sun",
+  "requestId": "00000000-0000-4000-8000-000000000002",
+  "expectedRevision": 1
 }
 ```
 
-The response is newline-delimited JSON (`application/x-ndjson`) with `progress`,
+Retries use `kind: "retry"` and `retryOf` (the latest failed assistant message ID)
+in place of content, with a fresh request ID. They reuse the original user message.
+Duplicate delivery of a request returns the existing run instead of calling the
+model again. The internal generation engine and evals still use the bounded
+`GenerationRequest` history shape; the public endpoint rejects that shape.
+
+The response is newline-delimited JSON (`application/x-ndjson`) beginning with
+`started` (conversation/user/assistant IDs and revision), followed by `progress`,
 `activity`, `step`, `tool`, `response`, `preview`, `result`, or `error` events. Preview carries safe source and
 dimensions; activity carries the current step and tool name. A result contains `message` and a `document` with
 `name`, `description`, `source`, `width`, and `height`, plus server-supplied `usage`
 with model and token counts. Usage is separate from model-generated output and is
 not forwarded in conversation history. Request errors return JSON
-with an HTTP 400/413/415 status. Policy rejection or a clarification request returns
-422; unavailable, malformed, refused or timed-out policy checks return 503.
-Errors after streaming starts are stream events.
+with an HTTP 400/413/415 status. Once messages are saved, policy failures are terminal stream errors: policy
+rejections set `retryable: false` and `excludedFromContext: true`; clarification
+requests are text-only replies. The underlying engine still uses 422/503 internally.
+Unauthenticated, invalid, conflicting, or unavailable-database requests fail before
+streaming with HTTP 401/400/409/503. Errors after streaming starts are stream events.
 
 ## Input policy and guardrails
 
@@ -312,7 +415,7 @@ Every valid generation request passes these checks before any stream is returned
    The broad `flagged` aggregate, ordinary harassment, general self-harm mentions,
    non-graphic violence, and the base hate category do not independently reject a
    request. The content classifier still checks severe hate and harmful depictions.
-   This rechecks editable user history in one free moderation request. Assistant
+   This rechecks user text from the server-selected recent history in one free moderation request. Assistant
    claims and artwork XML are excluded. Selected flags can still overblock benign
    discussion; category booleans are not perfect contextual judgments.
 2. AI SDK `experimental_decide` with `openai.decisionModel('gpt-6-luna')` calls
@@ -343,15 +446,15 @@ not show a generation loader or disable download until generation actually start
 A rejected prompt remains visible but is omitted from subsequent requests, so a safe
 next message can proceed. Clarification and social turns stay in conversation history,
 so the next answer can refer to them. The previous completed artwork is retained. No retry button
-is shown for 422; temporary failures remain retryable. These client behaviors are
-for recovery and do not establish trust on the server.
+is shown for a policy rejection; temporary failures remain retryable. Context
+exclusion is persisted and enforced by the server.
 
 After a retryable failure, the Retry button waits 15 seconds and shows a countdown.
 The cooldown starts again after another failure and clears on a new request or new
 conversation. This is a browser convenience only: it does not limit new submissions
 or direct API requests, and it does not implement provider-aware or automatic retries.
 
-Only the existing server-side `OPENAI_API_KEY` is needed. `OPENAI_MODEL` still
+The policy checker uses the existing server-side `OPENAI_API_KEY`. `OPENAI_MODEL` still
 controls SVG generation; the checker separately uses `gpt-6-luna`, the currently
 supported Decisions model. The provider is pinned at `@ai-sdk/openai@4.0.85`
 because decision support is experimental. As checked October 9, 2026, Decisions
@@ -363,11 +466,12 @@ and [moderation guide](https://developers.openai.com/api/docs/guides/moderation)
 
 ### Accepted portfolio tradeoffs
 
-Client-owned assistant history, earlier off-topic user messages, and artwork remain
-forgeable. Full history is not reclassified on every request; only user text is
+Assistant history and artwork are now loaded from owned database records, while
+user prompts and model content remain untrusted. Full saved history is not
+reclassified on every request; user text in the selected recent context is
 remoderated. The classifier sees bounded context, so very old references can need
-clarification. Server-owned conversation history and ownership checks remain future
-work. Agent instructions reinforce the policy, but prompt injection resistance
+clarification. Server-owned conversation history and ownership checks now enforce context
+selection and access isolation. Agent instructions reinforce the policy, but prompt injection resistance
 and semantic accuracy are not guaranteed.
 
 These are **input** guardrails. XML validation prevents executable SVG, not harmful
@@ -468,12 +572,11 @@ application logging off; a missing/short feedback secret hides feedback controls
 while generation logging remains available. Eval uploads still require their
 separate `--braintrust` CLI flag.
 
-Each browser conversation gets a UUID on its first submission, retains it across
-edits and retries, and receives a fresh ID after New icon or reload. It stays out
-of the URL because there is no saved conversation to reopen. Requests without an
-ID (such as eval inputs) remain compatible; tracked requests get a server fallback.
-IDs group logs, not authorize access; client-supplied history and conversation IDs
-are untrusted. Clerk supplies the authenticated user ID on the server.
+Each saved conversation gets a server-generated UUID, retained across edits,
+retries, reloads, and direct URL visits. The same ID groups Braintrust logs. Internal
+eval inputs without an ID still receive a tracking fallback. IDs are identifiers,
+not authorization: Clerk supplies the authenticated user ID, and database queries
+check that user owns the conversation.
 
 In Braintrust, open the project's **Logs** (rather than Experiments) to inspect
 `svg-generation` traces. Filter metadata by `userId`, `conversationId`,
@@ -494,7 +597,10 @@ optional reason for negative ratings. Sending feedback calls authenticated
 and reason on the matching generation row through `logFeedback()`. A signed token
 binds that row to its original Clerk user and expires after seven days. Modifying
 the token, changing users, or rotating the signing secret invalidates it without
-requiring a database. Feedback is only offered for complete validated results whose
+requiring a token database. Saved conversation feedback additionally checks that
+its token belongs to the user's completed message. Tracking upload precedes marking
+feedback saved in Neon, so an upload error cannot show a false saved state on reopen.
+Feedback is only offered for complete validated results whose
 SVG source differs from the submitted current artwork (or when creating the first SVG).
 A quiet “Rate this SVG” row with thumbs up/down stays beneath that artwork response;
 optional comment/reason fields open after selecting a rating. Social replies, clarification,
@@ -538,14 +644,16 @@ secret rotation or new generation is needed solely for this ID-format issue.
 
 ## Trust and usage limits
 
-Client history is editable, including forged assistant messages. It is context,
-not proof of prior actions or authorization. The server accepts only user/assistant
-roles, rejects additional fields, and owns the system instructions. Zod checks
-structure, not truthfulness or immunity to prompt injection. Future server-owned
-history would require authentication and conversation ownership checks.
+The public endpoint accepts only a new prompt or explicit retry reference, never
+client-owned history, assistant messages, SVG source, or owner IDs. The server owns
+context selection and system instructions. User prompts and stored model content
+remain untrusted context; database persistence is not immunity to prompt injection.
 
-- At most 20 messages, 2000 characters per message, 16000 total history characters.
-- Requests capped at 96000 bytes; responses at 1500000 bytes; SVG strings at
+- Model context uses at most 20 messages, 2000 characters per message, and 16000
+  total characters. Older complete turns remain stored but fall outside the recent
+  context window; no summarization model call is added.
+- Public persistence/submission bodies are capped at 8000 bytes. Internal model
+  requests are capped at 96000 bytes; generation responses at 1500000 bytes; SVG strings at
   48000 characters. Large preview updates are skipped when necessary to reserve
   320000 bytes for the final result.
 - At most six model steps, two SDK retries for transient provider call failures,
@@ -554,7 +662,7 @@ history would require authentication and conversation ownership checks.
   when the client disconnects. The browser times out at 300 seconds. Shared limits
   live in `lib/workspace/generation-limits.ts`. Retried provider attempts may incur
   additional usage not reported in the final successful response; these bounds
-  are not a billing quota. Conversation limits ask the user to start a new conversation.
+  are not a billing quota. Recent-context selection allows saved conversations to continue.
 - The token cap matches the default `gpt-4.1-mini` model's documented
   [32768-token output maximum](https://developers.openai.com/api/docs/models/gpt-4.1-mini).
   The SVG character and element limits still apply. If changing `OPENAI_MODEL`,
@@ -610,7 +718,7 @@ would require a dedicated, bounded conversation-model call after classification,
 no SVG tools. The current approach adds one language question to the existing Decisions
 call, not a new call or dependency. Interface labels, rejection/error text and the SVG
 agent’s generated explanations are outside this reply catalog. Social turns still incur the existing moderation/classification
-checks and count toward conversation limits; they do not incur SVG agent usage.
+checks and enter stored history/recent context; they do not incur SVG agent usage.
 No live classification evaluation was run for this change; mocked cases verify
 routing, not whether the model reliably interprets every phrasing or mixed request.
 Browser verification used copied workspace components and the actual HTTP handler
@@ -720,7 +828,8 @@ review those separately instead of forcing a framework lint downgrade.
 ## Deployment and next steps
 
 No deployment has been verified. Before public Vercel access, configure the server
-secrets (including production Clerk keys), configure the production Clerk domain,
+secrets (including production Clerk keys and DATABASE_URL), apply committed database
+migrations to the production Neon database, configure the production Clerk domain,
 and enable email/password, social connections, and Waitlist mode there too.
 Production social login needs your own provider OAuth credentials. Check login,
 invitation acceptance, logout, and unauthorized API requests on the deployed domain.
@@ -731,6 +840,5 @@ within Vercel Hobby's maximum with Fluid compute enabled. The generation deadlin
 is 290 seconds to leave room for response cleanup before the platform cutoff.
 
 Next steps: verify live multi-step tool calling with the configured model, evaluate
-fixed prompts for fidelity, latency and cost, and consider persisted document
-storage if edits must survive reloads. Final metadata reuses the validated SVG,
+fixed prompts for fidelity, latency and cost, and measure Neon storage/compute usage. Final metadata reuses the validated SVG,
 so the model does not spend output tokens reproducing the accepted artwork.

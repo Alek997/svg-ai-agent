@@ -12,7 +12,7 @@ export class GenerationRequestError extends Error {
 }
 
 export async function requestGeneration(
-  input: GenerationRequest,
+  input: GenerationRequest | import("../conversations/contracts").Submission,
   signal: AbortSignal,
   onEvent: (event: GenerationEvent) => void,
 ) {
@@ -49,7 +49,7 @@ export async function requestGeneration(
     if (completed)
       throw new Error("Unexpected data after generation finished.");
     const event = generationEventSchema.parse(JSON.parse(line));
-    if (event.type === "error") throw new Error(event.message);
+    if (event.type === "error") { onEvent(event); throw new Error(event.message); }
     if (event.type === "result" || event.type === "reply") completed = true;
     onEvent(event);
   }

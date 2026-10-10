@@ -1,9 +1,9 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { feedbackReasons, feedbackRequestSchema } from "@/lib/workspace/feedback";
 
-export function GenerationFeedback({ token }: { token: string }) {
+export function GenerationFeedback({ token, expiresAt }: { token: string; expiresAt?: number }) {
   const id = useId();
   const [rating, setRating] = useState<0 | 1 | null>(null);
   const [comment, setComment] = useState("");
@@ -11,6 +11,18 @@ export function GenerationFeedback({ token }: { token: string }) {
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
   const sending = useRef(false);
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    if (!expiresAt) return;
+    let timer: ReturnType<typeof setTimeout>;
+    function check() {
+      const remaining = expiresAt! - Date.now();
+      if (remaining <= 0) setExpired(true);
+      else timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
+    }
+    timer = setTimeout(check, 0);
+    return () => clearTimeout(timer);
+  }, [expiresAt]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,6 +44,8 @@ export function GenerationFeedback({ token }: { token: string }) {
       setStatus("error");
     } finally { sending.current = false; }
   }
+
+  if (expired) return <p className="mt-3 text-xs text-stone-400">Feedback period has ended.</p>;
 
   if (status === "saved") return <p role="status" className="mt-3 text-xs text-stone-500">Thanks for your feedback.</p>;
 

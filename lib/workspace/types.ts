@@ -5,11 +5,15 @@ export type ChatMessage = {
   excludedFromContext?: boolean;
   flow?: import("./flow").FlowEntry[];
   steps?: import("./contracts").StepTrace[];
-  runStatus?: "running" | "completed" | "error";
+  runStatus?: "running" | "completed" | "error" | "interrupted";
   runError?: string;
   tools?: import("./contracts").ToolTrace[];
   usage?: import("./contracts").GenerationUsage;
   feedbackToken?: string;
+  feedbackExpiresAt?: number;
+  feedbackSaved?: boolean;
+  retryable?: boolean;
+  position?: number;
 };
 
 // Model output must pass server XML validation before becoming a document.

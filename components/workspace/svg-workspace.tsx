@@ -1,284 +1,222 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { ChatPanel } from "./chat-panel";
 import { Button } from "@/components/ui/button";
 import { SvgCanvas } from "./svg-canvas";
 import { sampleDocument } from "@/lib/workspace/sample";
-import {
-  generationRequestSchema,
-  type GenerationRequest,
-} from "@/lib/workspace/contracts";
-import { recordFlowEvent } from "@/lib/workspace/flow";
+import { submissionSchema, type Submission, type ConversationPage, RUN_LEASE_MS } from "@/lib/conversations/contracts";
+import { createConversation, loadConversation } from "@/lib/conversations/client";
+import { applyEvent, finishDetails } from "@/lib/conversations/state";
 import { GenerationRequestError, requestGeneration } from "@/lib/workspace/generate-client";
 import { CLIENT_GENERATION_TIMEOUT_MS } from "@/lib/workspace/generation-limits";
 import type { ChatMessage, SvgDocument } from "@/lib/workspace/types";
 
-const welcome: ChatMessage = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Describe an illustration, icon, or idea to create an SVG. After it’s ready, send a follow-up message to refine it.\n\nThe canvas starts with sample artwork for inspiration.",
-};
-
-export function SvgWorkspace({ trackingEnabled = false }: { trackingEnabled?: boolean }) {
+const welcome: ChatMessage = { id: "welcome", role: "assistant", content: "Describe an illustration, icon, or idea to create an SVG. After it’s ready, send a follow-up message to refine it.\n\nThe canvas starts with sample artwork for inspiration." };
+export function SvgWorkspace({ trackingEnabled = false, initialConversationId }: { trackingEnabled?: boolean; initialConversationId?: string }) {
+  const pathname = usePathname();
+  const routeId = pathname.startsWith("/conversations/") ? pathname.split("/")[2] : null;
   const [messages, setMessages] = useState<ChatMessage[]>([welcome]);
   const [document, setDocument] = useState<SvgDocument | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [opening, setOpening] = useState(!!initialConversationId);
+  const [ready, setReady] = useState(!initialConversationId);
+  const [activeSavedRun, setActiveSavedRun] = useState<string | null>(null);
+  const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [preview, setPreview] = useState<SvgDocument | null>(null);
   const [activity, setActivity] = useState("Starting generation…");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [conversation, setConversation] = useState(0);
   const [draft, setDraft] = useState("");
+  const [olderCursor, setOlderCursor] = useState<number | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [retryInput, setRetryInput] = useState<Submission | null>(null);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const [loadVersion, setLoadVersion] = useState(0);
+  const retryAvailableAt = useRef(0);
+  const conversationId = useRef<string | null>(null);
+  const revision = useRef(0);
+  const loadedVersion = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
+  const pendingCreation = useRef<{ id: string; content: string } | null>(null);
   const resetDialog = useRef<HTMLDialogElement>(null);
   const keepWorking = useRef<HTMLButtonElement>(null);
-  const activeRequest = useRef<AbortController | null>(null);
-  const conversationId = useRef<string | null>(null);
-  const [retryInput, setRetryInput] = useState<GenerationRequest | null>(null);
-  const retryAvailableAt = useRef(0);
-  const [retrySeconds, setRetrySeconds] = useState(0);
-  const isRetryCoolingDown = retrySeconds > 0;
+  const pendingNavigation = useRef<string>("/");
 
-  useEffect(() => () => activeRequest.current?.abort(), []);
-  useEffect(() => {
-    if (!isRetryCoolingDown) return;
-    const interval = setInterval(() => {
-      setRetrySeconds(Math.max(0, Math.ceil((retryAvailableAt.current - Date.now()) / 1000)));
-    }, 250);
-    return () => clearInterval(interval);
-  }, [isRetryCoolingDown]);
-
-  const hasWork = messages.length > 1 || !!document || !!draft.trim() || isLoading;
-  useEffect(() => {
-    if (!hasWork) return;
-    function warnBeforeLeaving(event: BeforeUnloadEvent) {
-      event.preventDefault();
-      // Browsers display their own warning, not application-provided text.
-      event.returnValue = true;
-    }
-    window.addEventListener("beforeunload", warnBeforeLeaving);
-    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
-  }, [hasWork]);
-
-  function requestNewIcon() {
-    if (!hasWork) {
-      resetConversation();
-      return;
-    }
-    resetDialog.current?.showModal();
-    keepWorking.current?.focus();
+  function restore(page: ConversationPage, merge = false) {
+    conversationId.current = page.conversation.id;
+    revision.current = page.conversation.revision;
+    setMessages(previous => merge ? [welcome, ...[...previous.filter(message => message.id !== "welcome" && message.position && !page.messages.some(saved => saved.id === message.id)), ...page.messages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))] : [welcome, ...page.messages]);
+    setDocument(page.document); setPreview(null); setActiveSavedRun(page.conversation.activeRunId); setLeaseExpiresAt(page.conversation.leaseExpiresAt);
+    if (!merge) setOlderCursor(page.olderCursor);
+    setReady(true);
+    const last = page.messages.at(-1);
+    if (last && ["error", "interrupted"].includes(last.runStatus) && last.retryable) {
+      setRetryInput({ kind: "retry", conversationId: page.conversation.id, retryOf: last.id, requestId: crypto.randomUUID(), expectedRevision: page.conversation.revision });
+      setError(last.runError ?? "Generation was interrupted. Please retry.");
+    } else { setRetryInput(null); setError(null); }
   }
 
-  async function generate(input: GenerationRequest) {
-    if (activeRequest.current) return;
+  useEffect(() => {
+    if (routeId === conversationId.current && loadVersion === loadedVersion.current) return;
+    loadedVersion.current = loadVersion;
     const controller = new AbortController();
-    activeRequest.current = controller;
-    const replyId = crypto.randomUUID();
+    // Async loading also makes effect cleanup safe during development Strict Mode.
+    void Promise.resolve().then(async () => {
+      if (controller.signal.aborted) return;
+      activeRequest.current?.abort(); activeRequest.current = null;
+      setIsLoading(false); setIsGenerating(false); setProgress(0); setActivity("Starting generation…");
+      setPreview(null); setReady(false); setError(null); setRetryInput(null); setRetrySeconds(0);
+      if (routeId !== conversationId.current) {
+        setDraft(""); setMessages([welcome]); setDocument(null); setOlderCursor(null); setActiveSavedRun(null); setLeaseExpiresAt(null);
+        conversationId.current = null;
+      }
+      if (!routeId) {
+        conversationId.current = null; revision.current = 0; pendingCreation.current = null;
+        setDraft(""); setMessages([welcome]); setDocument(null); setOlderCursor(null); setActiveSavedRun(null); setLeaseExpiresAt(null); setOpening(false); setReady(true);
+        return;
+      }
+      setOpening(true);
+      try {
+        const page = await loadConversation(routeId, controller.signal);
+        if (!controller.signal.aborted) restore(page);
+      } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Conversation could not be opened."); }
+      finally { if (!controller.signal.aborted) setOpening(false); }
+    });
+    return () => controller.abort();
+  }, [routeId, loadVersion]);
+  useEffect(() => () => activeRequest.current?.abort(), []);
+  useEffect(() => {
+    if (!retrySeconds) return;
+    const interval = setInterval(() => setRetrySeconds(Math.max(0, Math.ceil((retryAvailableAt.current - Date.now()) / 1000))), 250);
+    return () => clearInterval(interval);
+  }, [retrySeconds]);
+  useEffect(() => {
+    if (!activeSavedRun || isLoading || !routeId) return;
+    // Reconcile once after the lease, rather than polling throughout generation.
+    const timer = setTimeout(() => setLoadVersion(value => value + 1), Math.min(RUN_LEASE_MS + 1000, Math.max(1000, new Date(leaseExpiresAt ?? "").getTime() - Date.now() + 1000) || RUN_LEASE_MS));
+    return () => clearTimeout(timer);
+  }, [activeSavedRun, leaseExpiresAt, isLoading, routeId]);
+  const hasUnsavedWork = !!draft.trim() || isLoading;
+  useEffect(() => {
+    if (!hasUnsavedWork) return;
+    function warn(event: BeforeUnloadEvent) { event.preventDefault(); event.returnValue = true; }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedWork]);
+
+  function navigate(path: string) {
+    if (hasUnsavedWork) { pendingNavigation.current = path; resetDialog.current?.showModal(); keepWorking.current?.focus(); }
+    else window.history.pushState(null, "", path);
+  }
+  function confirmNavigation() {
+    resetDialog.current?.close(); activeRequest.current?.abort();
+    window.history.pushState(null, "", pendingNavigation.current);
+    if (pendingNavigation.current === pathname) setLoadVersion(value => value + 1);
+  }
+  async function olderMessages() {
+    if (!conversationId.current || !olderCursor || loadingOlder) return;
+    const id = conversationId.current;
+    setLoadingOlder(true);
+    try {
+      const page = await loadConversation(id, undefined, olderCursor);
+      if (conversationId.current !== id) return;
+      setMessages(previous => [welcome, ...page.messages.filter(message => !previous.some(saved => saved.id === message.id)), ...previous.filter(message => message.id !== "welcome")]);
+      setOlderCursor(page.olderCursor);
+    } catch (error) { setError(error instanceof Error ? error.message : "Earlier messages could not be loaded."); }
+    finally { setLoadingOlder(false); }
+  }
+
+  async function generate(input: Submission, optimisticUserId?: string) {
+    if (activeRequest.current) return;
+    const controller = new AbortController(); activeRequest.current = controller;
+    let replyId = crypto.randomUUID() as string;
+    let accepted = false;
+    let excluded = false;
     setMessages(previous => [...previous, { id: replyId, role: "assistant", content: "", flow: [], tools: [], steps: [], runStatus: "running" }]);
-    setRetryInput(input);
-    retryAvailableAt.current = 0;
-    setRetrySeconds(0);
-    setIsLoading(true);
-    setIsGenerating(false);
-    setProgress(0);
-    setPreview(null);
-    setActivity("Checking your request…");
-    setError(null);
+    setRetryInput(input); setRetrySeconds(0); setIsLoading(true); setIsGenerating(false); setProgress(0); setPreview(null); setActivity("Saving your message…"); setError(null);
     const timeout = setTimeout(() => controller.abort(), CLIENT_GENERATION_TIMEOUT_MS);
     try {
-      await requestGeneration(input, controller.signal, (event) => {
+      await requestGeneration(input, controller.signal, event => {
         if (activeRequest.current !== controller) return;
-        if (event.type !== "activity" && event.type !== "progress" && event.type !== "reply") {
-          setMessages(previous => previous.map(message => message.id === replyId
-            ? { ...message, flow: recordFlowEvent(message.flow ?? [], event) }
-            : message));
+        if (event.type === "started") {
+          accepted = true; revision.current = event.revision;
+          const oldReplyId = replyId; replyId = event.assistantMessageId;
+          setMessages(previous => previous.map(message => message.id === oldReplyId ? { ...message, id: replyId } : message.id === optimisticUserId ? { ...message, id: event.userMessageId } : message));
+          setActivity("Checking your request…"); return;
         }
-        if (event.type === "step") {
-          setMessages(previous => previous.map(message => {
-            if (message.id !== replyId) return message;
-            const steps = [...(message.steps ?? [])];
-            const index = steps.findIndex(detail => detail.step === event.detail.step);
-            if (index === -1) steps.push(event.detail);
-            else steps[index] = event.detail;
-            return { ...message, steps };
-          }));
-        }
-        if (event.type === "tool") {
-          setMessages(previous => previous.map(message => {
-            if (message.id !== replyId) return message;
-            const tools = [...(message.tools ?? [])];
-            const index = tools.findIndex(call => call.id === event.call.id);
-            if (index === -1) tools.push(event.call);
-            else tools[index] = { ...tools[index], ...event.call };
-            return { ...message, tools };
-          }));
-        }
-        if (event.type === "preview") setPreview({
-          name: "draft.svg", description: "SVG in progress", ...event.svg,
-        });
-        if (event.type === "activity") setActivity(
-          `Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
-        );
-        if (event.type === "progress") {
-          setIsGenerating(true);
-          setProgress(event.characters);
-          setActivity(previous => previous === "Checking your request…" ? "Starting generation…" : previous);
-        }
-        if (event.type === "reply") {
-          setMessages(previous => previous.map(message => message.id === replyId
-            ? { ...message, content: event.message, runStatus: "completed" }
-            : message));
-          setRetryInput(null);
-        }
-        if (event.type === "result") {
-          setDocument(event.document);
-          setPreview(null);
-          setMessages(previous => previous.map(message => message.id === replyId
-            ? { ...message, content: event.message, usage: event.usage, feedbackToken: event.feedbackToken, runStatus: "completed" }
-            : message));
-          setRetryInput(null);
-        }
+        setMessages(previous => previous.map(message => message.id === replyId ? applyEvent(message, event) : message));
+        if (event.type === "preview") setPreview({ name: "draft.svg", description: "SVG in progress", ...event.svg });
+        if (event.type === "activity") setActivity(`Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`);
+        if (event.type === "progress") { setIsGenerating(true); setProgress(event.characters); }
+        if (event.type === "result") { setDocument(event.document); setPreview(null); setRetryInput(null); }
+        if (event.type === "reply") setRetryInput(null);
+        if (event.type === "error") { excluded = event.excludedFromContext ?? false; if (event.retryable === false) setRetryInput(null); }
       });
     } catch (error) {
-      if (activeRequest.current === controller) {
-        if (error instanceof GenerationRequestError && error.status === 422) {
-          setRetryInput(null);
-          // Keep the rejected prompt visible, but don't resubmit it on the next
-          // safe turn. This is UI recovery, not a server trust mechanism.
-          setMessages(previous => {
-            const lastUserId = previous.findLast(message => message.role === "user")?.id;
-            return previous.map(message => message.id === lastUserId
-              ? { ...message, excludedFromContext: true } : message);
-          });
-        } else {
-          retryAvailableAt.current = Date.now() + 15_000;
-          setRetrySeconds(15);
-        }
-        const message = controller.signal.aborted
-          ? "Generation timed out. Please retry."
-          : error instanceof Error ? error.message : "Generation failed. Please retry.";
-        setError(message);
-        setMessages(previous => previous.map(reply => reply.id === replyId
-          ? { ...reply, runStatus: "error", runError: message, flow: recordFlowEvent(reply.flow ?? [], { type: "error", message }) }
-          : reply));
+      if (activeRequest.current !== controller) return;
+      const text = controller.signal.aborted ? "Generation was interrupted. Reopen the conversation to check its saved state." : error instanceof Error ? error.message : "Generation failed. Please retry.";
+      setError(text);
+      setMessages(previous => previous.map(message => message.id === replyId ? finishDetails({ ...message, runStatus: "error", runError: text }) : message));
+      if (!accepted) {
+        setMessages(previous => previous.filter(message => message.id !== replyId && message.id !== optimisticUserId));
+        if (input.kind === "message") setDraft(input.content);
       }
+      if (error instanceof GenerationRequestError && error.status === 409) { setRetryInput(null); setLoadVersion(value => value + 1); }
+      else if (!excluded) { retryAvailableAt.current = Date.now() + 15_000; setRetrySeconds(15); }
     } finally {
       clearTimeout(timeout);
       if (activeRequest.current === controller) {
-        activeRequest.current = null;
-        setIsLoading(false);
-        setIsGenerating(false);
-        setPreview(null);
-        setMessages(previous => previous.map(message => message.id === replyId ? {
-          ...message,
-          steps: message.steps?.map(detail => detail.status === "running"
-            ? { ...detail, status: "interrupted" as const, description: "Generation ended before this step completed." }
-            : detail),
-          tools: message.tools?.map(call => call.status === "pending" || call.status === "running"
-            ? { ...call, status: "error" as const, error: "Generation ended before this tool call completed." }
-            : call),
-        } : message).filter(message => message.id !== replyId || message.content || message.tools?.length || message.steps?.length || message.runStatus));
+        // Refresh canonical IDs/details, including success if its last stream event was lost.
+        try {
+          const page = await loadConversation(input.conversationId);
+          if (activeRequest.current === controller) restore(page, true);
+        } catch { if (activeRequest.current === controller && accepted) { setReady(false); setRetryInput(null); setError("Unable to confirm saved state. Reopen this conversation before continuing."); } }
+        if (activeRequest.current === controller) { activeRequest.current = null; setIsLoading(false); setIsGenerating(false); setPreview(null); setHistoryRefresh(value => value + 1); }
       }
     }
   }
-
-  function sendMessage(content: string) {
-    if (activeRequest.current) return;
-    const nextMessages: ChatMessage[] = [
-      ...messages,
-      { id: crypto.randomUUID(), role: "user", content },
-    ];
-    const input = generationRequestSchema.safeParse({
-      conversationId: conversationId.current ??= crypto.randomUUID(),
-      messages: nextMessages
-        .filter((message) => message.id !== "welcome" && !message.excludedFromContext && message.content.trim())
-        .map(({ role, content }) => ({ role, content })),
-      ...(document ? { currentSvg: document.source } : {}),
-    });
-    if (!input.success) {
-      setError(
-        "The conversation is too long or the message is invalid. Start a new conversation, or use a shorter message.",
-      );
-      return;
+  async function sendMessage(content: string) {
+    if (activeRequest.current || opening || activeSavedRun || !ready) return;
+    const trimmed = content.trim();
+    if (!trimmed || trimmed.length > 2000) return;
+    if (!conversationId.current) {
+      const controller = new AbortController(); activeRequest.current = controller; setIsLoading(true); setError(null);
+      pendingCreation.current = pendingCreation.current?.content === trimmed ? pendingCreation.current : { id: crypto.randomUUID(), content: trimmed };
+      try {
+        const saved = await createConversation(pendingCreation.current.id, trimmed, controller.signal);
+        if (activeRequest.current !== controller) return;
+        conversationId.current = saved.id; revision.current = saved.revision;
+        window.history.replaceState(null, "", `/conversations/${saved.id}`);
+        setHistoryRefresh(value => value + 1);
+      } catch (error) { if (activeRequest.current === controller) { setDraft(trimmed); setError(error instanceof Error ? error.message : "Conversation could not be saved."); } return; }
+      finally { if (activeRequest.current === controller) { activeRequest.current = null; setIsLoading(false); } }
     }
-    setMessages(nextMessages);
-    void generate(input.data);
+    const parsed = submissionSchema.safeParse({ kind: "message", conversationId: conversationId.current, content: trimmed, requestId: crypto.randomUUID(), expectedRevision: revision.current });
+    if (!parsed.success) { setError("Your message could not be submitted."); setDraft(trimmed); return; }
+    const userId = crypto.randomUUID();
+    setMessages(previous => [...previous, { id: userId, role: "user", content: trimmed }]);
+    void generate(parsed.data, userId);
   }
-
-  function resetConversation() {
-    resetDialog.current?.close();
-    activeRequest.current?.abort();
-    activeRequest.current = null;
-    conversationId.current = null;
-    setRetryInput(null);
-    retryAvailableAt.current = 0;
-    setRetrySeconds(0);
-    setMessages([welcome]);
-    setDraft("");
-    setDocument(null);
-    setPreview(null);
-    setIsLoading(false);
-    setIsGenerating(false);
-    setError(null);
-    setProgress(0);
-    setConversation((value) => value + 1);
+  function retry() {
+    if (!retryInput || Date.now() < retryAvailableAt.current) return;
+    void generate(retryInput.kind === "retry" ? { ...retryInput, expectedRevision: revision.current } : retryInput);
   }
-
-  return (
-    <div className="grid grid-cols-1 flex-1 lg:h-[calc(100dvh-76px)] lg:flex-none lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px]">
-      <SvgCanvas
-        document={preview ?? document ?? sampleDocument}
-        hasPreview={!!preview}
-        activity={activity}
-        isSample={!document}
-        isLoading={isGenerating}
-      />
-      <ChatPanel
-        key={conversation}
-        messages={messages}
-        onSend={sendMessage}
-        onReset={requestNewIcon}
-        draft={draft}
-        onDraftChange={setDraft}
-        isLoading={isLoading}
-        progress={progress}
-        activity={activity}
-        trackingEnabled={trackingEnabled}
-        error={error}
-        retrySeconds={retrySeconds}
-        onRetry={
-          error && retryInput
-            ? () => {
-                if (Date.now() < retryAvailableAt.current) return;
-                void generate(retryInput);
-              }
-            : undefined
-        }
-      />
-      <dialog
-        ref={resetDialog}
-        aria-labelledby="reset-title"
-        aria-describedby="reset-description"
-        className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-stone-200 bg-white p-6 text-stone-800 shadow-xl backdrop:bg-stone-900/40"
-      >
-        <h2 id="reset-title" className="text-lg font-semibold">Start a new icon?</h2>
-        <div id="reset-description" className="mt-3 space-y-3 text-sm leading-6 text-stone-600">
-          <p>This will remove your current conversation, artwork, and any unsent message from this workspace. This cannot be undone.</p>
-          {isLoading && <p>Generation is still running and will be canceled.</p>}
-          {document && <p>To keep your icon, choose Keep working and download your SVG first.</p>}
-        </div>
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button
-            ref={keepWorking}
-            type="button"
-            onClick={() => resetDialog.current?.close()}
-            className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium hover:bg-stone-50"
-          >Keep working</button>
-          <Button onClick={resetConversation} variant="destructive">Discard and start new</Button>
-        </div>
-      </dialog>
-    </div>
-  );
+  return <div className="grid grid-cols-1 flex-1 lg:h-[calc(100dvh-76px)] lg:flex-none lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px]">
+    <SvgCanvas document={preview ?? document ?? sampleDocument} hasPreview={!!preview} activity={activity} isSample={!document} isLoading={isGenerating} />
+    <ChatPanel messages={messages} onSend={content => void sendMessage(content)} onReset={() => navigate("/")} draft={draft} onDraftChange={setDraft}
+      isLoading={isLoading || opening || !!activeSavedRun || !ready} progress={progress} activity={opening ? "Opening saved conversation…" : activeSavedRun && !isLoading ? "An earlier generation is still active. Refresh its status or wait for recovery." : activity}
+      trackingEnabled={trackingEnabled} error={error} retrySeconds={retrySeconds} onRetry={error && retryInput ? retry : undefined}
+      currentId={routeId} historyRefresh={historyRefresh} onOpenConversation={id => navigate(`/conversations/${id}`)}
+      olderCursor={olderCursor} loadingOlder={loadingOlder} onLoadOlder={() => void olderMessages()}
+      onRefreshConversation={routeId && !isLoading ? () => setLoadVersion(value => value + 1) : undefined} />
+    <dialog ref={resetDialog} aria-labelledby="reset-title" className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border border-stone-200 bg-white p-6 text-stone-800 shadow-xl backdrop:bg-stone-900/40">
+      <h2 id="reset-title" className="text-lg font-semibold">Leave this workspace?</h2>
+      <p className="mt-3 text-sm leading-6 text-stone-600">Saved conversations and artwork will remain in your history. Your unsent draft will be discarded, and any active generation will be interrupted.</p>
+      <div className="mt-6 flex justify-end gap-3"><button ref={keepWorking} type="button" onClick={() => resetDialog.current?.close()} className="rounded-lg border border-stone-200 px-3 py-2 text-xs">Keep working</button><Button onClick={confirmNavigation}>Leave workspace</Button></div>
+    </dialog>
+  </div>;
 }

@@ -1,5 +1,5 @@
 import { generateSvg } from "@/lib/ai/generate-svg";
-import { handleGeneration } from "@/lib/ai/handle-generation";
+import { handleSavedGeneration } from "@/lib/conversations/generate";
 import { auth } from "@clerk/nextjs/server";
 import { after } from "next/server";
 import { flushTracking, startGenerationTracking } from "@/lib/ai/tracking";
@@ -17,10 +17,8 @@ export async function POST(request: Request) {
     );
   }
   after(flushTracking);
-  return handleGeneration(request, (input, signal, progress, onEvent) =>
+  return handleSavedGeneration(request, userId, (input, signal, progress, onEvent) =>
     generateSvg(input, signal, progress, undefined, onEvent),
-    undefined,
-    undefined,
-    input => startGenerationTracking(input, userId),
+    { observe: input => startGenerationTracking(input, userId) },
   );
 }

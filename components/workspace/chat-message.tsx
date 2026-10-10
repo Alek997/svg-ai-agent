@@ -39,7 +39,9 @@ export function ChatMessage({ message }: { message: Message }) {
             </p>
           </div>
         )}
-        {isAssistant && message.runStatus === "completed" && message.feedbackToken && <GenerationFeedback token={message.feedbackToken} />}
+        {isAssistant && message.runError && <p className="mt-2 text-xs text-red-700">{message.runError}</p>}
+        {isAssistant && message.feedbackSaved ? <p className="mt-3 text-xs text-stone-500">Thanks for your feedback.</p>
+          : isAssistant && message.runStatus === "completed" && message.feedbackToken && <GenerationFeedback token={message.feedbackToken} expiresAt={message.feedbackExpiresAt} />}
       </div>
     </article>
   );

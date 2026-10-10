@@ -4,11 +4,19 @@ import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { ChatComposer } from "./chat-composer";
+import { ConversationHistory } from "./conversation-history";
 import { ChatMessage } from "./chat-message";
 import type { ChatMessage as Message } from "@/lib/workspace/types";
 
 type ChatPanelProps = {
   messages: Message[];
+  currentId?: string | null;
+  historyRefresh?: number;
+  onOpenConversation?: (id: string) => void;
+  olderCursor?: number | null;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
+  onRefreshConversation?: () => void;
   onSend: (content: string) => void;
   onReset: () => void;
   draft: string;
@@ -24,6 +32,7 @@ type ChatPanelProps = {
 
 export function ChatPanel({
   messages,
+  currentId = null, historyRefresh = 0, onOpenConversation, olderCursor, loadingOlder, onLoadOlder, onRefreshConversation,
   onSend,
   onReset,
   draft,
@@ -37,11 +46,13 @@ export function ChatPanel({
   trackingEnabled = false,
 }: ChatPanelProps) {
   const history = useRef<HTMLDivElement>(null);
+  const lastMessages = useRef<Message[]>([]);
   useEffect(() => {
-    history.current?.scrollTo({
-      top: history.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const previous = lastMessages.current;
+    lastMessages.current = messages;
+    // Loading older messages should not move the reader back to the latest turn.
+    if (previous.length && messages.length > previous.length && previous.at(-1)?.id === messages.at(-1)?.id && previous[1]?.id !== messages[1]?.id) return;
+    history.current?.scrollTo({ top: history.current.scrollHeight, behavior: "smooth" });
   }, [messages, isLoading, error]);
   return (
     <aside
@@ -67,10 +78,11 @@ export function ChatPanel({
         </Button>
       </div>
       <p className="border-b border-stone-200 bg-stone-50 px-5 py-3 text-[11px] leading-5 text-stone-600">
-        One icon at a time. New icon, reloading, or leaving this page clears your
-        conversation and artwork from this workspace. Download your SVG first to keep it.
+        Conversations and completed artwork are saved to your account. Older messages stay in history, but edits use recent context and the latest SVG.
+        {onRefreshConversation && <button type="button" onClick={onRefreshConversation} className="mt-1 block underline">Refresh saved conversation</button>}
         {trackingEnabled && <span className="mt-2 block">Prompts, generated artwork, and feedback are recorded to help improve SVG Studio. Avoid sharing sensitive information.</span>}
       </p>
+      {onOpenConversation && <ConversationHistory currentId={currentId} refreshKey={historyRefresh} onOpen={onOpenConversation} />}
       <div
         ref={history}
         role="log"
@@ -81,6 +93,7 @@ export function ChatPanel({
         <p className="text-center text-[10px] uppercase tracking-[0.15em] text-stone-400">
           A little inspiration goes a long way
         </p>
+        {olderCursor && <button type="button" onClick={onLoadOlder} disabled={loadingOlder} className="block w-full text-xs text-stone-500 underline">{loadingOlder ? "Loading…" : "Load earlier messages"}</button>}
         {messages.map((message) => (
           <ChatMessage key={message.id} message={message} />
         ))}

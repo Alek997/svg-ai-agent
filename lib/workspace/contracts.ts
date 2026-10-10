@@ -103,6 +103,7 @@ export const stepTraceSchema = z.object({
 export type StepTrace = z.infer<typeof stepTraceSchema>;
 
 export const generationEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("started"), conversationId: z.string().uuid(), userMessageId: z.string().uuid(), assistantMessageId: z.string().uuid(), revision: z.number().int().nonnegative(), replayed: z.boolean() }).strict(),
   z.object({
     type: z.literal("reply"),
     reason: z.enum(["conversation", "clarification"]),
@@ -133,7 +134,7 @@ export const generationEventSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z
-    .object({ type: z.literal("error"), message: z.string().min(1).max(500) })
+    .object({ type: z.literal("error"), message: z.string().min(1).max(500), retryable: z.boolean().optional(), interrupted: z.boolean().optional(), excludedFromContext: z.boolean().optional() })
     .strict(),
 ]);
 
