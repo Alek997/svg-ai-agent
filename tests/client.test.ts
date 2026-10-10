@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { GenerationRequestError, requestGeneration } from "../lib/workspace/generate-client";
 import type { GenerationEvent } from "../lib/workspace/contracts";
+import { loadConversation } from "../lib/conversations/client";
+
+test("saved conversation loads preserve denied/missing and temporary failure statuses", async context => {
+  for (const status of [403, 404, 503]) {
+    context.mock.method(globalThis, "fetch", async () => Response.json({ error: "Conversation is unavailable." }, { status }));
+    await assert.rejects(() => loadConversation("00000000-0000-4000-8000-000000000001"),
+      error => error instanceof GenerationRequestError && error.status === status);
+    context.mock.restoreAll();
+  }
+});
 
 const result: GenerationEvent = {
   type: "result",

@@ -74,6 +74,10 @@ Saved workspace URLs show skeletons for both artwork and messages while loading,
 including the route's server loading boundary. Starter artwork, welcome text, and
 prompt suggestions appear only in a new workspace. Saved conversations without
 an SVG show an empty canvas instead of the starter image.
+Opening another user's conversation, or a missing conversation, returns to the new
+workspace at `/` after the API rejects access. The rejected URL is replaced in
+browser history. Temporary loading failures stay on the saved URL with an error
+and a refresh action. Ownership remains enforced on every server read and write.
 Earlier messages can be loaded in pages of ten. Intermediate SVG preview sources,
 unsent drafts, and expanded/collapsed controls are temporary.
 
@@ -698,6 +702,14 @@ validates the server response contract; the authoritative SVG safety check runs
 on the server. Unsupported SVG features intentionally fail validation.
 
 ## Verification
+
+For the October 10, 2026 inaccessible-conversation redirect, all 170 mocked tests
+and lint passed. `npm run build` failed fetching Google Fonts in the sandbox;
+the network-enabled Webpack build passed, including TypeScript (with disk-space
+warnings for its cache). Browser checks used the actual workspace in a temporary
+fixture: 403/404 opens redirected to `/` with an enabled composer, 503 retained
+its error and refresh action, and New icon recovered from the failed open.
+No live two-account ownership check was run. The temporary fixture was removed.
 
 For the October 9, 2026 English/Serbian reply catalog change, 157 mocked tests, lint and
 `npm run build -- --webpack` (including TypeScript) passed. The default build failed

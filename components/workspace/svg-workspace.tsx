@@ -64,7 +64,8 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
   }
 
   useEffect(() => {
-    if (routeId === conversationId.current && loadVersion === loadedVersion.current) return;
+    // A failed open leaves the saved ID null; returning home must still reset the workspace.
+    if (routeId && routeId === conversationId.current && loadVersion === loadedVersion.current) return;
     loadedVersion.current = loadVersion;
     const controller = new AbortController();
     // Async loading also makes effect cleanup safe during development Strict Mode.
@@ -88,7 +89,15 @@ export function SvgWorkspace({ trackingEnabled = false, initialConversationId }:
       try {
         const page = await loadConversation(routeId, controller.signal);
         if (!controller.signal.aborted) restore(page);
-      } catch (error) { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Conversation could not be opened."); }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        if (error instanceof GenerationRequestError && (error.status === 403 || error.status === 404)) {
+          // The API checks ownership. Replace the rejected URL so Back cannot reopen it.
+          window.history.replaceState(null, "", "/");
+          return;
+        }
+        setError(error instanceof Error ? error.message : "Conversation could not be opened.");
+      }
       finally { if (!controller.signal.aborted) setOpening(false); }
     });
     return () => controller.abort();
