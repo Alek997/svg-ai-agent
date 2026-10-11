@@ -2,6 +2,7 @@ import type { GenerationEvent, StepTrace, ToolTrace } from "./contracts";
 import type { SvgDocument } from "./types";
 
 export type FlowEntry =
+  | { kind: "retrieval"; detail: import("../collections/contracts").Retrieval }
   | { kind: "step"; detail: StepTrace }
   | { kind: "tool"; call: ToolTrace }
   | { kind: "response"; step: number; text: string }
@@ -13,6 +14,7 @@ export type FlowEntry =
 // consecutive public text updates are coalesced; no tool or step is moved.
 export function recordFlowEvent(flow: FlowEntry[], event: GenerationEvent): FlowEntry[] {
   switch (event.type) {
+    case "retrieval": return [...flow, { kind: "retrieval", detail: event.detail }];
     case "step": return [...flow, { kind: "step", detail: event.detail }];
     case "tool": return [...flow, { kind: "tool", call: event.call }];
     case "response": {

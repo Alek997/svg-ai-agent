@@ -1,6 +1,6 @@
 import "server-only";
 import { generateText, Output, type LanguageModel } from "ai";
-import sharp from "sharp";
+import { renderSvg as renderSafeSvg } from "../lib/svg/render-svg";
 import { z } from "zod";
 import { safeSvgSchema } from "../lib/svg/validate-svg";
 import { summarizeUsage } from "../lib/ai/usage";
@@ -18,10 +18,7 @@ export const judgmentSchema = z.object({
 
 // Validate before handing untrusted XML to a renderer. Bound raster size too.
 export async function renderSvg(source: string): Promise<Buffer> {
-  const safe = safeSvgSchema.parse(source);
-  return sharp(Buffer.from(safe.source), { limitInputPixels: 4096 * 4096 })
-    .resize(evalConfig.judge.imageSize, evalConfig.judge.imageSize, { fit: "contain", background: "#e5e7eb" })
-    .flatten({ background: "#e5e7eb" }).png().toBuffer();
+  return renderSafeSvg(source, evalConfig.judge.imageSize);
 }
 
 export function scoreJudgment(requirements: string[], raw: unknown): Score {

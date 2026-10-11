@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { retrievalSchema } from "../collections/evidence";
 
 export const MAX_PROMPT_LENGTH = 2000;
 export const MAX_SVG_LENGTH = 48_000;
@@ -103,6 +104,7 @@ export const stepTraceSchema = z.object({
 export type StepTrace = z.infer<typeof stepTraceSchema>;
 
 export const generationEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("retrieval"), detail: retrievalSchema }).strict(),
   z.object({ type: z.literal("started"), conversationId: z.string().uuid(), userMessageId: z.string().uuid(), assistantMessageId: z.string().uuid(), revision: z.number().int().nonnegative(), replayed: z.boolean() }).strict(),
   z.object({
     type: z.literal("reply"),

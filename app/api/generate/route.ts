@@ -1,3 +1,4 @@
+import { searchCollection, retrievalQuery } from "@/lib/collections/retrieval";
 import { generateSvg } from "@/lib/ai/generate-svg";
 import { handleSavedGeneration } from "@/lib/conversations/generate";
 import { auth } from "@clerk/nextjs/server";
@@ -19,6 +20,9 @@ export async function POST(request: Request) {
   after(flushTracking);
   return handleSavedGeneration(request, userId, (input, signal, progress, onEvent) =>
     generateSvg(input, signal, progress, undefined, onEvent),
-    { observe: input => startGenerationTracking(input, userId) },
+    { observe: input => startGenerationTracking(input, userId),
+      retrieve: (run, input, signal) => searchCollection(userId, run.collectionId!, retrievalQuery(run.initialRequest!, input.messages.at(-1)!.content), signal, run.assistantMessageId),
+      generateWithReferences: (input, signal, progress, event, detail) => generateSvg(input, signal, progress, undefined, event, undefined, detail),
+    },
   );
 }

@@ -1,3 +1,4 @@
+import { RetrievalDetails } from "../collections/retrieval-details";
 import type { ChatMessage } from "@/lib/workspace/types";
 import type { FlowEntry } from "@/lib/workspace/flow";
 
@@ -7,6 +8,7 @@ function Payload({ value }: { value: unknown }) {
 
 function FlowPart({ entry }: { entry: FlowEntry }) {
   switch (entry.kind) {
+    case "retrieval": return <RetrievalDetails detail={entry.detail} />;
     case "step": return <>
       <p className="text-stone-500">Step {entry.detail.step} · Model {entry.detail.status === "running" ? "started" : entry.detail.status === "completed" ? "finished" : "interrupted"}</p>
       {entry.detail.status !== "running" && <p className="mt-1 whitespace-pre-wrap break-words">{entry.detail.description}</p>}

@@ -17,10 +17,11 @@ export async function generateSvg(
   model: LanguageModel = getLLM(),
   onEvent?: (event: GenerationEvent) => void,
   search = createWebSearch(),
+  retrieval?: import("../collections/contracts").Retrieval,
 ): ReturnType<GenerateSvg> {
   const agent = createSvgAgent(model, input.currentSvg, search);
   const result = await agent.stream({
-    messages: buildSvgMessages(input),
+    messages: buildSvgMessages(input, retrieval),
     abortSignal: signal,
   });
   let characters = 0;

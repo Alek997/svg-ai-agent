@@ -134,3 +134,34 @@ test("unsafe final SVGs are persisted as failure without a result", async () => 
   assert.equal(saved.at(-1)?.message.runStatus, "error");
   assert.ok(!saved.at(-1)?.message.flow?.some(entry => entry.kind === "result"));
 });
+
+test("private collection runs retrieve once after approval and never start tracking", async () => {
+  const { run, request, store, generate, saved } = setup();
+  run.private = true; run.collectionId = randomUUID(); run.initialRequest = "A circle";
+  let approved = false, searches = 0, generationCalls = 0;
+  const detail = { query: "A circle", collectionId: run.collectionId, collectionName: "Synthetic", candidates: [], references: [], conventions: [] };
+  const response = await handleSavedGeneration(request, "owner", generate, { store,
+    checkPolicy: async () => { approved = true; return { kind: "generation" }; },
+    observe: () => { throw new Error("Private content must never be tracked"); },
+    retrieve: async () => { assert.equal(approved, true); searches++; return detail; },
+    generateWithReferences: async (_input, _signal, _progress, _event, evidence) => { assert.deepEqual(evidence, detail); generationCalls++; return generate(); },
+  });
+  const received = await events(response);
+  assert.equal(searches, 1); assert.equal(generationCalls, 1);
+  assert.ok(received.some(event => event.type === "retrieval"));
+  assert.ok(saved.at(-1)?.message.flow?.some(entry => entry.kind === "retrieval"));
+});
+test("policy replies perform no retrieval; retrieval failure is retryable and cannot generate", async () => {
+  for (const denied of [true, false]) {
+    const { run, request, store, generate } = setup(); run.private = true; run.collectionId = randomUUID();
+    let calls = 0;
+    const response = await handleSavedGeneration(request, "owner", generate, { store,
+      checkPolicy: async () => denied ? { kind: "reply", reason: "clarification", message: "Describe an icon." } : { kind: "generation" },
+      retrieve: async () => { calls++; throw new Error("Private provider detail"); },
+      generateWithReferences: async () => { throw new Error("Must not generate"); },
+    });
+    const received = await events(response); assert.equal(calls, denied ? 0 : 1);
+    assert.equal(received.at(-1)?.type, denied ? "reply" : "error");
+    assert.ok(!JSON.stringify(received).includes("Private provider detail"));
+  }
+});

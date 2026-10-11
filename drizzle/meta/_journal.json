@@ -15,6 +15,13 @@
       "when": 1791624552809,
       "tag": "0001_public_svg_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791712957035,
+      "tag": "0002_private_collections",
+      "breakpoints": true
     }
   ]
 }

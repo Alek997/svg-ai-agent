@@ -9,7 +9,7 @@ import { conversationStore, type StartedRun } from "./store";
 import { readJson, conversationErrorResponse } from "./http";
 
 type Store = Pick<typeof conversationStore, "begin" | "save">;
-type Options = { store?: Store; checkPolicy?: (input: GenerationRequest, signal: AbortSignal) => Promise<PolicyOutcome>; observe?: (input: GenerationRequest) => GenerationObserver | undefined; timeoutMs?: number };
+type Options = { retrieve?: (run: StartedRun, input: GenerationRequest, signal: AbortSignal) => Promise<import("../collections/contracts").Retrieval>; generateWithReferences?: (input: GenerationRequest, signal: AbortSignal, progress: (n: number) => void, event: ((event: GenerationEvent) => void) | undefined, detail: import("../collections/contracts").Retrieval) => ReturnType<GenerateSvg>; store?: Store; checkPolicy?: (input: GenerationRequest, signal: AbortSignal) => Promise<PolicyOutcome>; observe?: (input: GenerationRequest) => GenerationObserver | undefined; timeoutMs?: number };
 const streamHeaders = { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
 
 // Persistence surrounds the existing tested generation engine. Only server-built
@@ -52,7 +52,14 @@ export async function handleSavedGeneration(request: Request, userId: string, ge
         send(started);
         signal.throwIfAborted();
         const input = new Request(request.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(run.input), signal });
-        const response = await handleGeneration(input, generate, options.timeoutMs ?? GENERATION_TIMEOUT_MS, options.checkPolicy ?? checkGenerationPolicy, options.observe);
+        const withRetrieval: GenerateSvg = async (input, signal, progress, event) => {
+          if (!run.collectionId) return generate(input, signal, progress, event);
+          if (!options.retrieve || !options.generateWithReferences) throw new Error("Retrieval unavailable.");
+          const detail = await options.retrieve(run, input, signal);
+          event?.({ type: "retrieval", detail });
+          return options.generateWithReferences(input, signal, progress, event, detail);
+        };
+        const response = await handleGeneration(input, withRetrieval, options.timeoutMs ?? GENERATION_TIMEOUT_MS, options.checkPolicy ?? checkGenerationPolicy, run.private ? undefined : options.observe);
         if (!response.ok) {
           const body = await response.json();
           const event: GenerationEvent = { type: "error", message: body.error, excludedFromContext: response.status === 422, retryable: response.status !== 422 };

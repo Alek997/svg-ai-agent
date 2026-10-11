@@ -28,6 +28,6 @@ export async function readJson<T>(request: Request, schema: z.ZodType<T>, maxByt
   } finally { reader.releaseLock(); }
 }
 export const jsonResponse = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
-export function conversationErrorResponse(error: unknown) {
-  return jsonResponse({ error: error instanceof ConversationError ? error.message : "Saved conversations are unavailable. Please try again shortly." }, error instanceof ConversationError ? error.status : 503);
+export function conversationErrorResponse(error: unknown, fallback = "Saved conversations are unavailable. Please try again shortly.") {
+  return jsonResponse({ error: error instanceof ConversationError ? error.message : fallback }, error instanceof ConversationError ? error.status : 503);
 }
