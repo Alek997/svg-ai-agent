@@ -7,7 +7,7 @@ import { trackingEnabled } from "@/lib/ai/tracking";
 export default async function Home() {
   const { userId } = await auth.protect();
   return (
-    <main className="flex min-h-dvh flex-col">
+    <main className="flex h-dvh flex-col overflow-hidden">
       <WorkspaceHeader />
       <SvgWorkspace ragEnabled={await ragEnabled(userId)} trackingEnabled={trackingEnabled()} />
     </main>

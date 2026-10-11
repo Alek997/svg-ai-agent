@@ -52,7 +52,7 @@ export function WorkspaceCollections({
     }
   }
   return (
-    <div className="space-y-2 border-b border-stone-200 bg-white px-6 py-3 text-xs text-stone-600">
+    <div className="shrink-0 space-y-2 border-b border-stone-200 bg-white px-6 py-3 text-xs text-stone-600">
       {!conversationId ? (
         <label>
           Reference collection{" "}

@@ -119,7 +119,7 @@ export function SvgCanvas({
           </div>
         </div>
       </div>
-      <div aria-busy={isLoading} className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12">
+      <div aria-busy={isLoading} className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12 lg:min-h-0">
         {isLoading && (
           <div role="status" className="absolute top-4 z-10 flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-4 py-2 text-xs text-stone-600 shadow-sm">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700" />
@@ -187,19 +187,19 @@ export function SvgCanvas({
         <div className="mt-7 flex items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-xs">
           <Button
             variant="ghost"
-            onClick={() => setZoom(Math.max(50, zoom - 25))}
-            disabled={zoom === 50 || view === "source"}
+            onClick={() => setZoom(value => value / 1.25)}
+            disabled={view === "source"}
             aria-label="Zoom out"
           >
             <Icon name="minus" width={14} height={14} />
           </Button>
-          <span className="w-12 text-center text-xs tabular-nums text-stone-600">
-            {zoom}%
+          <span className="min-w-12 px-1 text-center text-xs tabular-nums text-stone-600">
+            {zoom.toLocaleString(undefined, { maximumSignificantDigits: 3 })}%
           </span>
           <Button
             variant="ghost"
-            onClick={() => setZoom(Math.min(150, zoom + 25))}
-            disabled={zoom === 150 || view === "source"}
+            onClick={() => setZoom(value => value * 1.25)}
+            disabled={view === "source"}
             aria-label="Zoom in"
           >
             <Icon name="plus" width={14} height={14} />
@@ -215,7 +215,7 @@ export function SvgCanvas({
           </Button>
         </div>
       </div>
-      <footer className="flex min-h-[61px] items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 sm:px-7">
+      <footer className="flex min-h-[61px] shrink-0 items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 sm:px-7">
         <div className="min-w-0">
           <p className="truncate text-xs text-stone-600">{document.name}</p>
           <p className="mt-1 text-[10px] text-stone-400">

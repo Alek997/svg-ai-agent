@@ -9,5 +9,5 @@ export default async function Conversation({ params }: { params: Promise<{ id: s
   const { userId } = await auth.protect();
   const { id } = await params;
   if (!conversationIdSchema.safeParse(id).success) notFound();
-  return <main className="flex min-h-dvh flex-col"><WorkspaceHeader /><SvgWorkspace initialConversationId={id} ragEnabled={await ragEnabled(userId)} trackingEnabled={trackingEnabled()} /></main>;
+  return <main className="flex h-dvh flex-col overflow-hidden"><WorkspaceHeader /><SvgWorkspace initialConversationId={id} ragEnabled={await ragEnabled(userId)} trackingEnabled={trackingEnabled()} /></main>;
 }

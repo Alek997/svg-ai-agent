@@ -389,6 +389,13 @@ image description/tags → batch embedding → searchable**. `sharp` is a produc
 dependency and the renderer is shared with evals. The same 48,000-character
 allowlist applies, with an additional 64 KB file limit. PNGs are not stored.
 Validated-source SHA-256 hashes deduplicate within a collection.
+The temporary PNG preserves SVG transparency and uses transparent resize padding;
+the shared renderer no longer adds or flattens onto a light gray background.
+An actual background shape in the SVG remains part of the artwork. Description
+version `png-description-v3` excludes empty space and viewer backdrops from search
+metadata. Existing descriptions are retained; embedding reindexing alone does
+not regenerate them. Live evaluation should include white and pale icons, whose
+visibility may depend on how the vision service displays transparent images.
 
 `COLLECTION_DESCRIPTION_MODEL` defaults to `gpt-6-luna` using OpenAI Responses,
 structured output, `reasoningEffort: "none"`, `store: false`, a 300-token output cap,
@@ -447,7 +454,7 @@ one file/request for visible partial progress. Errors expose no provider credent
 or raw provider messages.
 
 Verification on October 11, 2026 uses mocked providers and synthetic SVGs/vectors:
-186 unit tests and 25 real PostgreSQL/pgvector integration tests, lint, TypeScript
+187 unit tests and 25 real PostgreSQL/pgvector integration tests, lint, TypeScript
 and the webpack production build. The default build was attempted: restricted font
 access first, then the existing Turbopack port-binding restriction. Database tests
 cover ownership, default-off capability injection, limits, concurrent claims,

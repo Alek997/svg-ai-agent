@@ -6,8 +6,8 @@ import { usePathname } from "./navigation";
 function Fixture() {
   const pathname = usePathname();
   return (
-    <>
-      <header className="flex flex-wrap gap-4 border-b border-stone-200 bg-white p-4 text-xs">
+    <main className={pathname === "/collections" ? "" : "flex h-dvh flex-col overflow-hidden"}>
+      <header className="flex shrink-0 flex-wrap gap-4 border-b border-stone-200 bg-white p-4 text-xs">
         <strong>
           Synthetic browser fixture · mocked policy/providers · disposable DB
         </strong>
@@ -47,7 +47,7 @@ function Fixture() {
           }
         />
       )}
-    </>
+    </main>
   );
 }
 createRoot(document.getElementById("root")!).render(<Fixture />);

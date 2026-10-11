@@ -148,6 +148,18 @@ test("shared renderer validates first and bounds temporary PNGs to 256 square", 
   assert.equal(metadata.width, 256);
   assert.equal(metadata.height, 256);
   assert.equal(metadata.format, "png");
+  assert.equal(metadata.hasAlpha, true);
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.equal(data[3], 0, "The empty canvas corner must remain transparent.");
+  assert.equal(data[(128 * info.width + 128) * info.channels + 3], 0, "The empty circle interior must remain transparent.");
+  assert.ok(data.some((value, index) => index % info.channels === 3 && value > 0), "The icon artwork must remain visible.");
   await assert.rejects(() => renderSvg("<svg><script/></svg>"));
   await assert.rejects(() => renderSvg(source, 4096));
+});
+test("renderer preserves an actual SVG background while keeping resize padding transparent", async () => {
+  const png = await renderSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 12"><rect width="24" height="12" fill="#e5e7eb"/></svg>');
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.equal(data[3], 0);
+  const middle = (128 * info.width + 128) * info.channels;
+  assert.deepEqual([...data.subarray(middle, middle + 4)], [229, 231, 235, 255]);
 });

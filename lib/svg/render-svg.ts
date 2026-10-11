@@ -7,8 +7,10 @@ export async function renderSvg(source: string, size = 256): Promise<Buffer> {
     throw new Error("Invalid raster size.");
   const safe = safeSvgSchema.parse(source);
   return sharp(Buffer.from(safe.source), { limitInputPixels: 4096 * 4096 })
-    .resize(size, size, { fit: "contain", background: "#e5e7eb" })
-    .flatten({ background: "#e5e7eb" })
+    .resize(size, size, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .png()
     .toBuffer();
 }
