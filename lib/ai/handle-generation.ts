@@ -181,7 +181,7 @@ export async function handleGeneration(
           (event) => {
             if (event.type === "preview") {
               send({ type: "preview", svg: safeSvgSchema.parse(event.svg.source) });
-            } else if (event.type === "activity" || event.type === "tool" || event.type === "step" || event.type === "response") send(generationEventSchema.parse(event));
+            } else if (event.type === "retrieval" || event.type === "activity" || event.type === "tool" || event.type === "step" || event.type === "response") send(generationEventSchema.parse(event));
           },
         );
         if (signal.aborted) throw new Error("Aborted");

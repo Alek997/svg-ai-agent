@@ -38,8 +38,8 @@ export function listConversations(signal?: AbortSignal, cursor?: string, include
   if (includeArtwork) params.set("artwork", "true");
   return fetchConversationJson(`/api/conversations${params.size ? `?${params}` : ""}`, conversationListSchema, { signal });
 }
-export function createConversation(requestId: string, content: string, signal: AbortSignal) {
+export function createConversation(requestId: string, content: string, signal: AbortSignal, collectionId?: string | null) {
   return fetchConversationJson("/api/conversations", conversationSummarySchema.extend({ revision: z.number().int().nonnegative() }), {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, content }), signal,
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId, content, ...(collectionId ? { collectionId } : {}) }), signal,
   });
 }

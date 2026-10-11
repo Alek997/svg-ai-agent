@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const { userId } = await auth();
   if (!userId) return jsonResponse({ error: "Please sign in to save conversations." }, 401);
-  try { const input = await readJson(request, createConversationSchema); return jsonResponse(await conversationStore.create(userId, input.requestId, input.content), 201); }
+  try { const input = await readJson(request, createConversationSchema); return jsonResponse(await conversationStore.create(userId, input.requestId, input.content, input.collectionId), 201); }
   catch (error) { return conversationErrorResponse(error); }
 }
 export async function GET(request: Request) {

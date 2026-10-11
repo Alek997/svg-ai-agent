@@ -2,14 +2,18 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import { alias } from "drizzle-orm/pg-core";
 import { withDatabase } from "../db/client";
-import { conversations, messages, svgResults } from "../db/schema";
+import { conversations, messages, svgResults, collections, collectionIcons, collectionReferences } from "../db/schema";
 import { safeSvgSchema } from "../svg/validate-svg";
 import { svgDocumentSchema, type GenerationRequest } from "../workspace/contracts";
 import type { ChatMessage, SvgDocument } from "../workspace/types";
 import type { FeedbackRequest } from "../workspace/feedback";
 import { verifyFeedbackToken } from "../ai/feedback-token";
 import { conversationIdSchema, chatMessageSchema, storedDetailsSchema, RUN_LEASE_MS, MESSAGE_PAGE_SIZE, type StoredDetails, type Submission, type ConversationPage } from "./contracts";
+import { withoutReferenceSources } from "../collections/evidence";
+import { ConversationError } from "./errors";
+export { ConversationError } from "./errors";
 import { finishDetails, selectContext } from "./state";
 
 type Database = Parameters<Parameters<typeof withDatabase>[0]>[0];
@@ -17,10 +21,8 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type MessageRow = typeof messages.$inferSelect;
 type ConversationRow = typeof conversations.$inferSelect;
 const blankDetails = (): StoredDetails => ({ version: 1, flow: [], retryable: true });
-export class ConversationError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
-}
 export type StartedRun = {
+  collectionId?: string | null; private?: boolean; initialRequest?: string;
   replayed: boolean; conversationId: string; userMessageId: string; assistantMessageId: string; revision: number;
   message: ChatMessage; document: SvgDocument | null; input: GenerationRequest;
 };
@@ -65,16 +67,23 @@ async function owned(tx: Transaction, ownerId: string, id: string) {
 }
 
 // Database injection allows real PostgreSQL transaction tests without Neon credentials.
-export function createConversationStore(runDatabase: typeof withDatabase = withDatabase) {
+export function createConversationStore(runDatabase: typeof withDatabase = withDatabase, checkCapability = async (ownerId: string) => (await import("../collections/access")).requireRag(ownerId)) {
   return {
-    async create(ownerId: string, requestId: string, content: string) {
-      return runDatabase(async db => {
-        const [created] = await db.insert(conversations).values({ id: randomUUID(), ownerId, creationRequestId: requestId, title: content.slice(0, 100) }).onConflictDoNothing().returning();
+    async create(ownerId: string, requestId: string, content: string, collectionId?: string | null) {
+      if (collectionId) await checkCapability(ownerId);
+      return runDatabase(db => db.transaction(async tx => {
+        const db = tx;
+        if (collectionId) {
+          const [collection] = await tx.select().from(collections).where(and(eq(collections.id, collectionId), eq(collections.ownerId, ownerId))).for("update");
+          const [ready] = await tx.select({ id: collectionIcons.id }).from(collectionIcons).where(and(eq(collectionIcons.ownerId, ownerId), eq(collectionIcons.collectionId, collectionId), eq(collectionIcons.status, "ready"))).limit(1);
+          if (!collection || !ready) throw new ConversationError("Select a collection with searchable icons.", 409);
+        }
+        const [created] = await db.insert(conversations).values({ id: randomUUID(), ownerId, creationRequestId: requestId, collectionId: collectionId ?? null, private: !!collectionId, title: content.slice(0, 100) }).onConflictDoNothing().returning();
         if (created) return { ...summary(created), revision: created.revision };
         const [existing] = await db.select().from(conversations).where(and(eq(conversations.ownerId, ownerId), eq(conversations.creationRequestId, requestId)));
-        if (!existing || existing.title !== content.slice(0, 100)) throw new ConversationError("Creation request ID was already used.", 409);
+        if (!existing || existing.title !== content.slice(0, 100) || existing.collectionId !== (collectionId ?? null)) throw new ConversationError("Creation request ID was already used.", 409);
         return { ...summary(existing), revision: existing.revision };
-      });
+      }));
     },
     async list(ownerId: string, cursor?: string, includeArtwork = false) {
       let before: z.infer<typeof cursorSchema> | undefined;
@@ -96,17 +105,27 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
     async page(ownerId: string, id: string, before?: number): Promise<ConversationPage> {
       return runDatabase(db => db.transaction(async tx => {
         const conversation = await owned(tx, ownerId, id);
+        if (conversation.collectionId) await checkCapability(ownerId);
         const rows = await tx.select({ message: messages, result: svgResults }).from(messages).leftJoin(svgResults, eq(svgResults.assistantMessageId, messages.id)).where(and(eq(messages.conversationId, id), before ? lt(messages.position, before) : undefined)).orderBy(desc(messages.position)).limit(MESSAGE_PAGE_SIZE + 1);
         const [latest] = await tx.select({ publicId: svgResults.publicId, document: svgResults.document }).from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).where(and(eq(messages.conversationId, id), eq(messages.status, "completed"))).orderBy(desc(messages.position)).limit(1);
         const selected = rows.slice(0, MESSAGE_PAGE_SIZE).reverse();
-        return { conversation: { ...summary(conversation), revision: conversation.revision, activeRunId: conversation.activeRunId, leaseExpiresAt: conversation.leaseExpiresAt?.toISOString() ?? null },
-          messages: selected.map(row => chatMessageSchema.parse(hydrate(row.message, row.result))), document: latest ? safeDocument(latest.document) : null, publicId: latest?.publicId ?? null,
+        const retained = selected.length ? await tx.select().from(collectionReferences).where(and(eq(collectionReferences.ownerId, ownerId), inArray(collectionReferences.assistantMessageId, selected.map(row => row.message.id)))) : [];
+        for (const row of selected) {
+          const details = storedDetailsSchema.parse(row.message.details);
+          row.message.details = { ...details, flow: details.flow.map(entry => entry.kind !== "retrieval" ? entry : { ...entry, detail: { ...entry.detail, references: entry.detail.references.map(ref => {
+            const copy = retained.find(copy => copy.id === ref.id && copy.hash === ref.hash);
+            return { ...ref, source: copy?.source ? safeSvgSchema.parse(copy.source).source : null, deleted: !copy?.source };
+          }) } }) };
+        }
+        return { conversation: { ...summary(conversation), collectionId: conversation.collectionId, private: conversation.private, revision: conversation.revision, activeRunId: conversation.activeRunId, leaseExpiresAt: conversation.leaseExpiresAt?.toISOString() ?? null },
+          messages: selected.map(row => chatMessageSchema.parse(hydrate(row.message, row.result))), document: latest ? safeDocument(latest.document) : null, publicId: conversation.private ? null : latest?.publicId ?? null,
           olderCursor: rows.length > MESSAGE_PAGE_SIZE ? selected[0].message.position : null };
       }));
     },
     async begin(ownerId: string, submission: Submission): Promise<StartedRun> {
       return runDatabase(db => db.transaction(async tx => {
         const conversation = await owned(tx, ownerId, submission.conversationId);
+        if (conversation.collectionId) await checkCapability(ownerId);
         const [duplicate] = await tx.select().from(messages).where(and(eq(messages.conversationId, conversation.id), eq(messages.requestId, submission.requestId)));
         if (!duplicate && (conversation.activeRunId || conversation.revision !== submission.expectedRevision)) throw new ConversationError("This conversation changed or has an active generation. Reopen it before continuing.", 409);
         let user: MessageRow;
@@ -126,6 +145,12 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
         const [latest] = await tx.select({ document: svgResults.document }).from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).where(and(eq(messages.conversationId, conversation.id), eq(messages.status, "completed"))).orderBy(desc(messages.position)).limit(1);
         const document = latest ? safeDocument(latest.document) : null;
         const history = await tx.select({ role: messages.role, content: messages.content, status: messages.status }).from(messages).where(and(eq(messages.conversationId, conversation.id), lt(messages.position, user.position), eq(messages.excludedFromContext, false))).orderBy(desc(messages.position)).limit(40);
+        // Greetings/clarification are not the initial artwork request. Prefer
+        // the earliest turn with retrieval evidence or completed artwork.
+        const initialUser = alias(messages, "initial_user");
+        const [initial] = await tx.select({ content: initialUser.content }).from(messages).innerJoin(initialUser, eq(initialUser.id, messages.userMessageId))
+          .where(and(eq(messages.conversationId, conversation.id), sql`(exists (select 1 from svg_results r where r.assistant_message_id = ${messages.id}) or exists (select 1 from jsonb_array_elements(${messages.details}->'flow') f where f->>'kind' = 'retrieval'))`))
+          .orderBy(messages.position).limit(1);
         const input: GenerationRequest = { conversationId: conversation.id, messages: selectContext(history.reverse().map(row => ({ role: row.role, content: row.content, runStatus: row.status })), user.content), ...(document ? { currentSvg: document.source } : {}) };
         let assistant = duplicate;
         let revision = conversation.revision;
@@ -136,7 +161,7 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
           await tx.update(conversations).set({ revision, nextPosition: position + 1, activeRunId: assistant.id, leaseExpiresAt: new Date(Date.now() + RUN_LEASE_MS), updatedAt: new Date() }).where(eq(conversations.id, conversation.id));
         }
         const [result] = duplicate ? await tx.select().from(svgResults).where(eq(svgResults.assistantMessageId, assistant.id)) : [];
-        return { replayed: !!duplicate, conversationId: conversation.id, userMessageId: user.id, assistantMessageId: assistant.id, revision, message: hydrate(assistant, result), document: result ? safeDocument(result.document) : document, input };
+        return { collectionId: conversation.collectionId, private: conversation.private, initialRequest: initial?.content ?? user.content, replayed: !!duplicate, conversationId: conversation.id, userMessageId: user.id, assistantMessageId: assistant.id, revision, message: hydrate(assistant, result), document: result ? safeDocument(result.document) : document, input };
       }));
     },
     async save(ownerId: string, run: StartedRun, message: ChatMessage, terminal: boolean, document?: SvgDocument, excludeUser = false) {
@@ -148,7 +173,7 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
           resultId = randomUUID();
           await tx.insert(svgResults).values({ id: resultId, assistantMessageId: run.assistantMessageId, document: safeDocument(document) });
         }
-        const details = storedDetailsSchema.parse({ version: 1, flow: (message.flow ?? []).map(entry => entry.kind === "result" ? { kind: "result", message: entry.message, resultId } : entry), usage: message.usage,
+        const details = storedDetailsSchema.parse({ version: 1, flow: (message.flow ?? []).map(entry => entry.kind === "result" ? { kind: "result", message: entry.message, resultId } : entry.kind === "retrieval" ? { ...entry, detail: withoutReferenceSources(entry.detail) } : entry), usage: message.usage,
           feedbackToken: message.feedbackToken, feedbackExpiresAt: message.feedbackExpiresAt, feedbackSaved: message.feedbackSaved, retryable: message.retryable ?? true });
         await tx.update(messages).set({ content: message.content, status: message.runStatus ?? "running", error: message.runError ?? null, details }).where(and(eq(messages.id, run.assistantMessageId), eq(messages.conversationId, run.conversationId)));
         if (excludeUser) await tx.update(messages).set({ excludedFromContext: true }).where(eq(messages.id, run.userMessageId));
@@ -157,16 +182,17 @@ export function createConversationStore(runDatabase: typeof withDatabase = withD
     },
     async checkFeedback(ownerId: string, token: string) {
       return runDatabase(async db => {
-        const [found] = await db.select({ id: messages.id }).from(messages).innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(and(eq(conversations.ownerId, ownerId), eq(messages.status, "completed"), sqlToken(token))).limit(1);
+        const [found] = await db.select({ id: messages.id }).from(messages).innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(and(eq(conversations.ownerId, ownerId), eq(conversations.private, false), eq(messages.status, "completed"), sqlToken(token))).limit(1);
         if (!found || !process.env.BRAINTRUST_FEEDBACK_SECRET || !verifyFeedbackToken(token, ownerId, process.env.BRAINTRUST_FEEDBACK_SECRET)) throw new ConversationError("Feedback permission expired or was not found.", 403);
       });
     },
-    async saveFeedback(ownerId: string, token: string, feedback: FeedbackRequest) {
+    async saveFeedback(ownerId: string, token: string, feedback: FeedbackRequest, sendFeedback?: () => Promise<void>) {
       await runDatabase(db => db.transaction(async tx => {
         // JSONB token lookup is indexed below only if feedback volume warrants it.
-        const candidates = await tx.select({ message: messages }).from(messages).innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(and(eq(conversations.ownerId, ownerId), eq(messages.status, "completed"), sqlToken(token))).for("update", { of: messages });
+        const candidates = await tx.select({ message: messages }).from(messages).innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(and(eq(conversations.ownerId, ownerId), eq(conversations.private, false), eq(messages.status, "completed"), sqlToken(token))).for("update", { of: conversations });
         const found = candidates[0]?.message;
         if (!found || !process.env.BRAINTRUST_FEEDBACK_SECRET || !verifyFeedbackToken(token, ownerId, process.env.BRAINTRUST_FEEDBACK_SECRET)) throw new ConversationError("Feedback permission expired or was not found.", 403);
+        await sendFeedback?.();
         const details = storedDetailsSchema.parse(found.details);
         await tx.update(messages).set({ details: { ...details, feedbackSaved: true, feedback: { rating: feedback.rating, comment: feedback.comment, ...(feedback.reason ? { reason: feedback.reason } : {}) } } }).where(eq(messages.id, found.id));
       }));

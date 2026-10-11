@@ -102,8 +102,7 @@ No dollar cost is calculated. The model label is read-only.
 History and artwork are server-owned. URLs use server-generated UUIDs, and every
 resource read/write checks Clerk ownership. One generation can claim a conversation
 at a time; revision checks prevent conflicting submissions across tabs. Tool revision
-counters still reset per model request. No image-generation or visual-inspection
-model is used.
+counters still reset per model request. SVG generation uses no image-generation or visual-inspection model. Private collection indexing separately describes temporary PNG renders.
 
 Progressive preview is an approximation: unfinished paths, text, and elements do
 not appear until a completed-element checkpoint is available; unfinished gradients,
@@ -340,6 +339,155 @@ one search, one rejected SVG attribute (`role`), successful repair/validation,
 and a final beach illustration with a shark, three legs and blue sneakers.
 This is one smoke check, not a comparative fidelity evaluation or verification
 against a reference image. The default model remains `gpt-4.1-mini`.
+
+## Private icon collections (feature-rag)
+
+This is infrastructure for testing your chosen icons. No real collection has been
+imported or embedded, and no user has been enabled automatically. The likely
+future dataset is [Tabler's MIT outline icons](https://github.com/tabler/tabler-icons/tree/a4ce1404bc6d24d3c365afe7b258d6bf6f48d62d/icons/outline);
+that link is a source note, not a seed/import command.
+
+Apply the additive `drizzle/0002_private_collections.sql` migration with
+`npm run db:migrate` to the intended development Neon database before enabling
+access. It enables pgvector, adds collections/icons, counters and deletable
+reference copies, and adds nullable collection selection plus a persistent
+privacy flag to conversations. Existing conversations default to ordinary behavior.
+This change prepares the migration; it does not apply it to your real database.
+
+In Clerk Dashboard, set the chosen user's **private metadata** to include:
+
+```json
+{ "capabilities": ["feature-rag"] }
+```
+
+Preserve any existing capabilities. Missing metadata/entry disables the feature.
+The server reads Clerk's private metadata, rather than trusting browser props or
+public metadata. Pages/navigation and collection APIs are gated; creating,
+opening and editing a collection-based conversation also checks the capability.
+Capability removal never turns private artwork public. Historical artwork remains
+owner-only even after its collection is deleted; deleting the collection clears
+selection but preserves conversation privacy. No cross-user retrieval cache exists.
+
+**Collections** appears beside **My SVGs** for enabled users. Create a name,
+select standalone SVG files (no ZIPs), then **Start indexing / Resume**. Uploads
+show per-file success/failure and duplicate detection. Cards show previews,
+descriptions, tags, status, attempts, usage, explicit retries, reindexing and deletion.
+Select one searchable collection or None before creating a conversation; the
+selection is fixed. **Add to collection** copies the saved, server-validated latest
+artwork and permanently makes all results in that conversation private, revoking
+all public links. The UI explains this beside the action. Active generations cannot
+be copied, preventing privacy/tracking races.
+
+Every operation scopes data to the authenticated owner. Short public SVG IDs and
+legacy UUID URLs both check the conversation's privacy flag. Private runs do not
+start Braintrust observers, issue feedback tokens or upload feedback. Adding an
+existing ordinary result revokes its old feedback permissions; previously uploaded
+ordinary-run logs are not retroactively erased from Braintrust.
+
+Ingestion is **XML allowlist validation → temporary 256×256 PNG → structured
+image description/tags → batch embedding → searchable**. `sharp` is a production
+dependency and the renderer is shared with evals. The same 48,000-character
+allowlist applies, with an additional 64 KB file limit. PNGs are not stored.
+Validated-source SHA-256 hashes deduplicate within a collection.
+The temporary PNG preserves SVG transparency and uses transparent resize padding;
+the shared renderer no longer adds or flattens onto a light gray background.
+An actual background shape in the SVG remains part of the artwork. Description
+version `png-description-v3` excludes empty space and viewer backdrops from search
+metadata. Existing descriptions are retained; embedding reindexing alone does
+not regenerate them. Live evaluation should include white and pale icons, whose
+visibility may depend on how the vision service displays transparent images.
+
+`COLLECTION_DESCRIPTION_MODEL` defaults to `gpt-6-luna` using OpenAI Responses,
+structured output, `reasoningEffort: "none"`, `store: false`, a 300-token output cap,
+30-second call deadlines and no provider retries. Official model documentation
+checked October 11, 2026 lists image input, structured output and standard prices
+of $0.10 input / $0.50 output per million tokens:
+[GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna).
+`OPENAI_MODEL` continues to configure the SVG generator independently.
+`COLLECTION_EMBEDDING_MODEL` defaults to `text-embedding-3-small`, explicitly
+requesting 1,536 dimensions. Embedding input includes filename, description and
+tags. Model/dimensions/version and successful provider usage are stored; changing
+embedding configuration requires explicit reindexing. Description quality and
+real cost have not yet been evaluated.
+
+A processing request claims at most five icons with a 240-second database lease,
+uses at most two concurrent vision calls, persists descriptions before embedding,
+then embeds the batch. The open browser schedules batches. Pause, unmount or page
+close stops scheduling and cancels its request; already accepted provider work can
+finish or be billed. Expired claims become explicit stage errors rather than
+silently repeating paid work. **Retry failed stage** reschedules only that stage;
+press **Start indexing / Resume** afterwards. Each failed stage has at most three
+attempts. Ready icons can be explicitly reindexed without repeating vision.
+A lost process may require waiting for the claim to expire, then refreshing and
+retrying. There is no background worker or automatic repair loop.
+
+Database-backed limits are five collections/user, 200 icons/collection, 200 vision
+analysis attempts/day and 120 retrieval searches/hour. Windows use UTC; failed
+analysis/search attempts consume quota. Collection row locks, claim IDs and atomic
+usage upserts enforce bounds across tabs/server instances. Generator calls remain
+subject to existing separate generation bounds.
+
+Retrieval runs once after artwork-policy approval, using the initial artwork
+request plus latest instruction without a rewriting model. Owner/collection
+filters apply before exact cosine and PostgreSQL full-text rankings. Each ranking
+returns ten candidates; equal-weight reciprocal rank fusion uses `k=60` with ID
+tie-breaking. There is no approximate index. At most three complete validated SVGs
+fit within a combined 48,000-character source budget; large candidates are skipped,
+never truncated. Grid/stroke/fill observations common to at least half of searchable
+icons support the examples. References/descriptions are untrusted visual data;
+final SVG validation remains authoritative. Keyword matching uses PostgreSQL
+`simple` full-text tokens and AND semantics, so long natural-language queries may
+rely primarily on semantic matches.
+
+The **Retrieval playground** uses the identical search function without drawing.
+It and saved/streamed **Details** show the query, collection, descriptions, cosine
+scores, semantic/keyword ranks, fused scores/ranks, selected source hashes,
+observations and owner-only previews/source. Reference sources are stored separately
+from message JSON; deleting icons or collections erases retained copies and Details
+shows **Reference deleted**. Previously delivered browser copies cannot be recalled.
+
+Implementation modules: `lib/collections/{access,store,process,providers,retrieval}.ts`;
+APIs: `/api/collections`, `/api/collections/[id]`, and POST actions `upload`,
+`process`, `retry`, `search`, `add-result`, `delete-icon`. Only the upload action
+accepts bounded larger JSON bodies (five files/request, 700 KB total); the UI uploads
+one file/request for visible partial progress. Errors expose no provider credentials
+or raw provider messages.
+
+Verification on October 11, 2026 uses mocked providers and synthetic SVGs/vectors:
+187 unit tests and 25 real PostgreSQL/pgvector integration tests, lint, TypeScript
+and the webpack production build. The default build was attempted: restricted font
+access first, then the existing Turbopack port-binding restriction. Database tests
+cover ownership, default-off capability injection, limits, concurrent claims,
+stage retries, interrupted processing, hybrid ranking, persistence, deletion,
+embedding incompatibility, public/legacy links and feedback revocation.
+Browser checks use actual client components and server stores/stream handler in a
+loopback-only harness, with a test navigation adapter and mocked policy/providers:
+creation, partial upload rejection, progress, failed embedding, explicit retry,
+pause/resume, playground, collection selection, generation, Details, safe preview,
+matching download, add-from-result, private follow-ups, unsafe output and failed
+requests. Browser automation stalled on a native deletion confirmation; deletion
+and historical source removal are verified by the integration suite. Live Clerk
+capability changes, real Luna/embedding calls, Neon migrations, measured fidelity,
+latency/cost and deployed behavior are still unverified.
+
+To reproduce synthetic browser QA, first build (for CSS) and run `test:db` against
+a **disposable** `svg_conversations_test*` PostgreSQL database with pgvector, then:
+
+```bash
+TEST_DATABASE_URL=postgresql://.../svg_conversations_test_rag npm run test:browser:fixture
+# Open http://127.0.0.1:4317/collections
+```
+
+`test:db` truncates its test tables. The fixture imports no real icons and makes
+no external model/Braintrust calls; upload only `tests/browser/fixtures/*.svg`.
+The unsafe fixture is intentionally rejected. `esbuild` is a dev dependency used
+only to bundle the actual components for this isolated browser harness, which is
+never mounted as a production Next.js route or authentication bypass.
+
+After you supply the desired icons, inspect/import only those under your account,
+then measure descriptions, retrieval relevance, style consistency, latency and
+actual usage/cost. Compare no retrieval, semantic-only and hybrid results on fixed
+requests separately from the infrastructure checks above.
 
 ## Local setup
 
@@ -908,9 +1056,7 @@ migrations to the production Neon database, configure the production Clerk domai
 and enable email/password, social connections, and Waitlist mode there too.
 Production social login needs your own provider OAuth credentials. Check login,
 invitation acceptance, logout, and unauthorized API requests on the deployed domain.
-Add request/rate/cost protection before public access. Current
-bounds constrain individual requests; they do not enforce per-user quotas across
-requests or server instances. The route requests a 300-second platform duration,
+Add request/rate/cost protection before public access. Generation bounds constrain individual requests; SVG generation still needs per-user request/cost protection. Private collections enforce their own database-backed quotas across requests and server instances. The route requests a 300-second platform duration,
 within Vercel Hobby's maximum with Fluid compute enabled. The generation deadline
 is 290 seconds to leave room for response cleanup before the platform cutoff.
 

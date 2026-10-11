@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { retrievalSchema } from "../collections/contracts";
 import { MAX_PROMPT_LENGTH, svgDocumentSchema, stepTraceSchema, toolTraceSchema, generationUsageSchema } from "../workspace/contracts";
 import { publicIdSchema } from "../svg/public-id";
 
@@ -7,6 +8,7 @@ export const MESSAGE_PAGE_SIZE = 10;
 export const conversationIdSchema = z.string().uuid();
 export const createConversationSchema = z.object({
   requestId: z.string().uuid(),
+  collectionId: z.string().uuid().nullable().optional(),
   content: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
 }).strict();
 export const submissionSchema = z.discriminatedUnion("kind", [
@@ -22,9 +24,10 @@ export const flowEntrySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("preview"), characters: z.number().int().nonnegative(), width: z.number().positive(), height: z.number().positive() }).strict(),
   z.object({ kind: z.literal("result"), message: z.string().max(2000), document: svgDocumentSchema }).strict(),
   z.object({ kind: z.literal("error"), message: z.string().max(500) }).strict(),
+  z.object({ kind: z.literal("retrieval"), detail: retrievalSchema }).strict(),
 ]);
 const storedFlowEntrySchema = z.union([
-  flowEntrySchema.options[0], flowEntrySchema.options[1], flowEntrySchema.options[2], flowEntrySchema.options[3], flowEntrySchema.options[5],
+  flowEntrySchema.options[6], flowEntrySchema.options[0], flowEntrySchema.options[1], flowEntrySchema.options[2], flowEntrySchema.options[3], flowEntrySchema.options[5],
   z.object({ kind: z.literal("result"), message: z.string().max(2000), resultId: z.string().uuid() }).strict(),
 ]);
 export const storedDetailsSchema = z.object({
@@ -49,7 +52,7 @@ export const conversationSummarySchema = z.object({
   id: conversationIdSchema, title: z.string().max(100), updatedAt: z.string().datetime(),
 }).strict();
 export const conversationPageSchema = z.object({
-  conversation: conversationSummarySchema.extend({ revision: z.number().int().nonnegative(), activeRunId: z.string().uuid().nullable(), leaseExpiresAt: z.string().datetime().nullable() }),
+  conversation: conversationSummarySchema.extend({ collectionId: z.string().uuid().nullable().optional(), private: z.boolean().optional(), revision: z.number().int().nonnegative(), activeRunId: z.string().uuid().nullable(), leaseExpiresAt: z.string().datetime().nullable() }),
   messages: z.array(chatMessageSchema).max(MESSAGE_PAGE_SIZE),
   document: svgDocumentSchema.nullable(), olderCursor: z.number().int().positive().nullable(),
   publicId: publicIdSchema.nullable(),

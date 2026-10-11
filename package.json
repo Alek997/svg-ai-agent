@@ -11,7 +11,8 @@
     "eval": "node --conditions=react-server --import tsx evals/run.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "test:db": "node --conditions=react-server --import tsx --test tests/integration/*.test.ts"
+    "test:db": "node --conditions=react-server --import tsx --test tests/integration/*.test.ts",
+    "test:browser:fixture": "node --conditions=react-server --import tsx tests/browser/server.mts"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.85",
@@ -26,7 +27,8 @@
     "saxes": "^6.0.0",
     "server-only": "^0.0.1",
     "ws": "^8.22.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -39,9 +41,9 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "pg": "^8.23.1",
-    "sharp": "^0.35.5",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "esbuild": "^0.28.2"
   }
 }

@@ -1,7 +1,7 @@
 import "server-only";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { withDatabase } from "../db/client";
-import { svgResults } from "../db/schema";
+import { svgResults, messages, conversations } from "../db/schema";
 import { safeSvgSchema } from "./validate-svg";
 import { publicIdSchema, publicSvgIdSchema } from "./public-id";
 
@@ -9,7 +9,7 @@ import { publicIdSchema, publicSvgIdSchema } from "./public-id";
 export async function readPublicSvg(id: string, runDatabase = withDatabase): Promise<unknown | null> {
   return runDatabase(async db => {
     const [row] = await db.select({ source: sql<string>`${svgResults.document}->>'source'` })
-      .from(svgResults).where(publicIdSchema.safeParse(id).success ? eq(svgResults.publicId, id) : eq(svgResults.id, id)).limit(1);
+      .from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(and(eq(conversations.private, false), publicIdSchema.safeParse(id).success ? eq(svgResults.publicId, id) : eq(svgResults.id, id))).limit(1);
     return row?.source ?? null;
   });
 }
@@ -17,7 +17,7 @@ export async function readPublicSvg(id: string, runDatabase = withDatabase): Pro
 // Legacy page links redirect without reading any conversation or user metadata.
 export async function resolvePublicId(id: string, runDatabase = withDatabase): Promise<string | null> {
   return runDatabase(async db => {
-    const [row] = await db.select({ publicId: svgResults.publicId }).from(svgResults).where(eq(svgResults.id, id)).limit(1);
+    const [row] = await db.select({ publicId: svgResults.publicId }).from(svgResults).innerJoin(messages, eq(messages.id, svgResults.assistantMessageId)).innerJoin(conversations, eq(conversations.id, messages.conversationId)).where(and(eq(conversations.private, false), eq(svgResults.id, id))).limit(1);
     return row?.publicId ?? null;
   });
 }
