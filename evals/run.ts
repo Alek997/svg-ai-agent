@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { registerTelemetry } from "ai";
 import { Eval, braintrustAISDKTelemetry, type EvalScorer } from "braintrust";
-import { getLLM } from "../lib/ai/model";
+import { DEFAULT_OPENAI_MODEL, getLLM } from "../lib/ai/model";
 import { evalConfig } from "./config";
 import { datasetSchema, type EvalCase, type EvalOutput, type Score } from "./types";
 import { createEvalTask } from "./task";
@@ -43,20 +43,20 @@ async function main() {
   }
   if (!process.env.OPENAI_API_KEY?.trim()) throw new EvalSetupError("Set OPENAI_API_KEY in .env.local before a live eval.");
   if (values.braintrust && !process.env.BRAINTRUST_API_KEY?.trim()) throw new EvalSetupError("Set BRAINTRUST_API_KEY in .env.local before uploading an eval.");
-  if (values.judge && !process.env.EVAL_JUDGE_MODEL?.trim()) throw new EvalSetupError("Set EVAL_JUDGE_MODEL to an image-capable model before enabling --judge.");
 
   // Register tracing only in this CLI process, never in browser or app requests.
   if (values.braintrust) registerTelemetry(braintrustAISDKTelemetry());
   const model = getLLM();
+  const judgeModel = process.env.EVAL_JUDGE_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
   const scorers = [...basicScorers];
-  if (values.judge) scorers.push(createVisionScorer(createOpenAI({ apiKey: process.env.OPENAI_API_KEY }).responses(process.env.EVAL_JUDGE_MODEL!)));
+  if (values.judge) scorers.push(createVisionScorer(createOpenAI({ apiKey: process.env.OPENAI_API_KEY }).responses(judgeModel)));
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const experimentName = `${values.name || evalConfig.suiteVersion}-${stamp}`;
   const hash = (text: string) => createHash("sha256").update(text).digest("hex");
   const metadata = {
     ...evalConfig,
     generatorModel: typeof model === "string" ? model : model.modelId,
-    judgeModel: values.judge ? process.env.EVAL_JUDGE_MODEL : null,
+    judgeModel: values.judge ? judgeModel : null,
     datasetHash: hash(datasetText),
     agentHash: hash(await readFile("lib/ai/svg-agent.ts", "utf8")),
     judgePromptHash: hash(await readFile("evals/judge-prompt.ts", "utf8")),

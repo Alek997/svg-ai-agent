@@ -14,7 +14,7 @@ const allowed = { scope: { choice: "allow" as const }, content: { choice: "allow
 const checks: PolicyChecks = { moderate: async () => false, classify: async () => allowed };
 
 function mockEnvironment(context: TestContext) {
-  for (const [name, value] of Object.entries({ OPENAI_API_KEY: "mock-key", OPENAI_MODEL: "gpt-4.1-mini" })) {
+  for (const [name, value] of Object.entries({ OPENAI_API_KEY: "mock-key", OPENAI_MODEL: "gpt-6-luna" })) {
     const previous = process.env[name];
     process.env[name] = value;
     context.after(() => { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; });

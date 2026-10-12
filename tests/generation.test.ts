@@ -29,7 +29,7 @@ const artwork = {
   svg,
 };
 
-const usage = { model: "gpt-4.1-mini", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 };
+const usage = { model: "gpt-6-luna", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 };
 const validOutput = { output: artwork, usage };
 
 for (const [name, body] of [

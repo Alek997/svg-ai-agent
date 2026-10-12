@@ -29,23 +29,23 @@ and traces. Without it, Braintrust's SDK runs locally with `noSendLogs: true`.
 The CLI loads `.env.local`; existing shell environment variables take precedence.
 It does not load Next.js's full hierarchy of environment files.
 
-In Braintrust, create an account, create a project (or use `svg-ai-agent`), and
+In Braintrust, create an account, choose or create your project, and
 create an API key in your account settings. Set these values in `.env.local`:
 
 ```dotenv
 OPENAI_API_KEY=your-local-key
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-6-luna
 BRAINTRUST_API_KEY=your-local-braintrust-key
-BRAINTRUST_PROJECT=svg-ai-agent
-EVAL_JUDGE_MODEL=gpt-4.1-mini
+BRAINTRUST_PROJECT=<your project name>
+EVAL_JUDGE_MODEL=gpt-6-luna
 ```
 
 Never put real keys in the dataset or commit `.env.local`. These are CLI/server
 variables, not browser variables. The judge model is independently configurable
-and must accept image inputs and structured output. `gpt-4.1-mini` is a low-cost
-starting judge, not a calibrated authority. Its documented image input and
-structured-output capabilities were checked; live judge accuracy has not been
-established. See the [model documentation](https://developers.openai.com/api/docs/models/gpt-4.1-mini).
+and must accept image inputs and structured output. Generation and judging default
+to `gpt-6-luna`; set `EVAL_JUDGE_MODEL` to override the judge. Calibrate results
+against human-reviewed examples. See the
+[model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna).
 
 ## 1. Dataset — what do we ask, and what should happen?
 
@@ -82,8 +82,11 @@ Raw provider exception messages are not saved. Token usage unavailable after
 a thrown generation is `null`; it does not mean the failed request was free.
 Repeated preview payloads are omitted to avoid storing many copies of the SVG.
 
-The generation model comes from `OPENAI_MODEL`. Production step/token/retry/
-deadline limits still apply. `config.ts` additionally caps a suite at 20 cases;
+This evaluates the drawing engine directly: it does not run Clerk authentication,
+conversation persistence, HTTP input-policy checks or private collection retrieval.
+Those paths have separate application tests. The generation model comes from
+`OPENAI_MODEL`. Production step, token, retry and deadline limits still apply.
+`config.ts` additionally caps a suite at 20 cases;
 the runner uses one trial and concurrency one. These limit work, not exact
 dollar spend. There is no automatic full-request retry.
 
@@ -113,10 +116,11 @@ Add focused mocked tests for important new scoring behavior.
 ### The visual scorer
 
 `vision-scorer.ts` validates SVG before rendering it with Sharp. It produces a
-512×512 PNG on a gray backdrop, sends it and the requirements to an image-capable
-model, and requests structured verdicts. Edits include two images: result first,
-starting artwork second. The assistant's explanation and SVG source are not
-given to the judge as evidence.
+512×512 PNG using the shared `lib/svg/render-svg.ts` renderer. It preserves SVG
+transparency with transparent padding, then sends the image and requirements to an
+image-capable model and requests structured verdicts. Edits include two images:
+result first, starting artwork second. The assistant's explanation and SVG source
+are not given to the judge as evidence.
 
 Edit `judge-prompt.ts` to adjust the judge instructions. Edit `config.ts` for
 image size, timeout, and output token limits. Change `rubricVersion` when you
@@ -131,8 +135,9 @@ there is no accepted artwork to evaluate. Review null counts alongside averages:
 missing scores are not passes and may be omitted from Braintrust averages.
 
 Vision judgment can be wrong, especially for counting, perspective, subtle edits,
-and transparency. A gray flattened image cannot reliably prove transparency;
-use an XML/alpha check for an exact transparency contract. Judge agreement must
+and transparency. How the image service displays transparent pixels can affect
+white or pale artwork visibility; a vision verdict cannot establish an exact
+transparency contract. Use an XML/alpha check for that property. Judge agreement must
 be checked against a small human-labeled sample, including intentionally wrong
 drawings. Do not use uncalibrated scores as deployment gates.
 
@@ -155,8 +160,8 @@ Every finished run saves `results.json` and accepted SVGs under
 judge evidence/usage, generation usage/timing, and the Braintrust experiment URL
 when available. A nonzero exit code flags failures, unavailable scores, or any
 score below 1. This is a strict review signal, not a production quality threshold.
-Braintrust connection failures stop the run; cloud uploads have not been verified
-without a configured key. There is no dashboard connection in the application UI.
+Braintrust connection failures stop the run. Uploaded experiments are inspected
+in Braintrust; the application UI has no experiment dashboard.
 
 ## Comparing experiments
 
@@ -168,26 +173,23 @@ a small difference is a reliable improvement.
 
 The runner records the configuration and hashes of the dataset, agent file,
 scorer files, and judge prompt. These make changed inputs/settings visible; Git
-history remains the source for retrieving the corresponding code. Maintain a
+history remains the source for retrieving the corresponding code. The shared
+renderer is not separately hashed or versioned by the runner. Record the code
+revision and rendering settings with each experiment; runs produced with different
+backdrops or renderers are not identical evaluation settings. Version future
+rendering/scoring changes explicitly. Maintain a
 small held-out set of cases you do not use while tuning prompts to reduce overfitting.
 
 This setup intentionally records tokens rather than dollar estimates; prices,
 cached-token discounts, and unavailable failed-call usage need deliberate handling.
 
-## Verification
+## Tests
 
 `npm test` covers dataset rejection, failure accounting, SVG safety, tool ordering,
 PNG rendering, checklist integrity, judge uncertainty, mocked vision requests,
-and Braintrust local evaluation. Tests make no live model calls or cloud uploads.
-
-Setup verification: 72 tests, ESLint, TypeScript, dry-run case filtering, and
-`npm run build -- --webpack` passed. A saved baseline SVG was rendered and
-visually inspected. The default Turbopack build failed because its CSS worker
-could not bind a local port in this execution environment, including on retry.
-No live generation, live judge assessment, or Braintrust upload was performed.
-`npm audit` reported five existing high-severity entries in the unchanged
-ESLint/fast-glob/micromatch/braces dependency chain; resolving those is outside
-this eval change.
+and Braintrust local evaluation. Automated tests use mock providers and make no
+live model calls or cloud uploads. See the [main README](../README.md#evaluation-and-tests)
+for repository check commands and the separate database/browser test setup.
 
 References: [Braintrust code evals](https://www.braintrust.dev/docs/evaluate/run-in-code),
 [Braintrust TypeScript SDK](https://www.braintrust.dev/docs/reference/libs/nodejs),

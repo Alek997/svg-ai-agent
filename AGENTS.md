@@ -8,131 +8,124 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# SVG AI Agent
+# SVG Studio
 
 ## Purpose
 
-Build a portfolio and interview project that turns a user's text prompt into a
-clean SVG that closely matches their description, with a live preview in the browser.
+Maintain SVG Studio, a conversational application for creating and editing SVG
+artwork with safe progressive previews, saved conversations, public result links
+and private reference collections.
 
 ## Working style
 
-- Support the user's AI engineering learning goals: keep the implementation
-  understandable and explain the reasoning behind meaningful decisions.
-- Work in small, useful steps. Before each step, explain what will change and why.
-- When creating a file or adding a dependency, explain its purpose and where it
-  fits in the request flow.
-- After each step, summarize the behavior added, how it was checked, and any
-  remaining limitations.
-- Explain unfamiliar AI and Next.js concepts in plain language. Document decisions
-  that will be useful to discuss in an interview.
-- Start with a working generation flow. Add agent loops, tools, and abstractions
-  when there is a concrete problem they solve; explain the difference between a
-  single model call and an agent that iterates using feedback.
-- Keep changes focused on the current step. Avoid unrelated refactors and creating
-  directories or infrastructure before they are needed.
+- Make focused, incremental changes. Explain meaningful decisions, new files and
+  dependencies, how changes were checked, and any remaining limitations.
+- Keep names and request flows understandable. Add abstractions, tools or
+  infrastructure when they solve a concrete problem.
+- Preserve existing behavior, ownership, privacy and data contracts during
+  refactors. Planned work in `TASKS.md` is not authorization to start it.
+- Keep README focused on current functionality, setup and supported claims.
+  Avoid conversational history and unsupported verification claims.
 
-## Current structure and conventions
+## Structure and conventions
 
-- Use the existing Next.js App Router, TypeScript with strict checking, and
-  Tailwind CSS. Keep the root-level `app/` structure and `@/*` import alias.
-- `app/page.tsx`: main page; currently the starter screen.
-- `app/layout.tsx`: shared layout, fonts, and page metadata.
-- `app/globals.css`: global styles and Tailwind theme.
-- `public/`: static assets; never put secrets here.
-- Use npm and maintain `package-lock.json` with dependency changes.
-- Read the relevant installed Next.js guides before writing application code. If
-  `node_modules/next/dist/docs/` is missing, install dependencies first.
-- Consult current official Vercel AI SDK and OpenAI documentation when selecting
-  models or using SDK APIs. Do not assume examples from older SDK versions apply.
+- Use npm and maintain `package-lock.json` when dependencies change.
+- Preserve Next.js App Router, strict TypeScript, Tailwind CSS, root-level `app/`
+  and the `@/*` import alias.
+- Read relevant installed guides in `node_modules/next/dist/docs/` before writing
+  application code. Install dependencies first if those guides are missing.
+- Check current official AI SDK and OpenAI documentation before changing SDK APIs
+  or model selection. The provider's Decisions integration is experimental.
+- `app/`: pages, API Route Handlers, shared layout/styles and custom app icons.
+- `components/`: workspace, collection, public SVG and shared UI components.
+- `lib/ai/`: model configuration, policy, tools, generation, tracking and feedback.
+- `lib/conversations/`, `lib/collections/`, `lib/db/`: owned persistence, retrieval,
+  quotas and database schema/client.
+- `lib/svg/`, `lib/workspace/`: SVG safety, snapshots, rasterization, contracts and
+  client state/stream helpers.
+- `drizzle/`: SQL migrations and migration metadata. Never store database dumps here.
+- `evals/`, `evaluations/`, `tests/`: evaluation code/artifacts and test fixtures.
+- Preserve the generated Next.js instruction block at the top of this file.
 
-## Initial implementation
+## Generation flow
 
-- Use the Vercel AI SDK with its OpenAI provider for model calls on the server.
-- Start with a low-cost OpenAI model suitable for SVG generation. Verify current
-  availability, pricing, and SDK compatibility before choosing the default.
-- Keep the model choice configurable on the server, for example with
-  `OPENAI_MODEL`, so experiments do not require rewriting the generation flow.
-- Prefer a simple flow: prompt form → Next.js server route → streamed model
-  generation → Zod validation and SVG safety checks → client-side live preview,
-  source display, and download.
-- Use Zod schemas for request inputs and generation results, with inferred
-  TypeScript types. Enforce validation on the server even when the client also
-  validates for immediate feedback.
-- Use a Route Handler such as `app/api/generate/route.ts` for the server endpoint.
-  Extract model and SVG helpers only as their responsibilities become clear.
-- Show useful loading and error states, and reject empty or oversized prompts.
-- Bound output size and model usage. Avoid unbounded retries or agent loops.
-- Define clean output explicitly: valid standalone SVG with a `viewBox`, no
-  Markdown fences, no executable content or external resources, and reasonably
-  simple markup. Prompt instructions alone do not guarantee those properties.
+- Use the existing flow: Clerk authentication → owned conversation claim →
+  server-loaded context → input policy → optional private retrieval → bounded
+  drawing/validation agent → final validation and database commit.
+- The saved-generation stream emits `started` before policy checks. Do not start
+  drawing, tools or previews until policy approval.
+- Keep generation on the server using the AI SDK/OpenAI provider. `OPENAI_MODEL`
+  defaults to `gpt-6-luna`; policy, collection and judge models are independent.
+- Create request-local tool state. Preserve the six-step bound, output limits,
+  provider retry bound, timeouts and cancellation. Avoid unbounded repair loops.
+- `querySvg` reads current artwork; `validateSvg` checks a complete candidate.
+  Final metadata contains only message/filename, and the server attaches the
+  latest accepted SVG. Never finalize after the latest proposal failed validation.
+- Tavily search is optional, limited to two attempts, and supplies untrusted text
+  references. Do not claim reference image inspection.
+- Use Zod schemas with inferred types for requests, transport and stored results.
+  Enforce validation on the server even when the client validates for feedback.
+- Preserve useful loading/errors/retries and the previous completed artwork when
+  generation fails. Final success must follow the database commit.
 
-## Secrets and generated SVG
+## Ownership and privacy
 
-- Keep `OPENAI_API_KEY` exclusively on the server. Read it from server environment
-  variables and never expose it through client props, responses, logs, or browser
-  bundles. Never use a `NEXT_PUBLIC_` prefix for secrets.
-- Put local secrets in `.env.local`, which is already ignored by Git. Never ask
-  the user to paste the API key into chat or commit a real key.
-- When environment setup is added, commit a placeholder-only `.env.example` and
-  explicitly allow that file in `.gitignore` while keeping real env files ignored.
-- Mark shared modules that access secrets or call the model with `server-only`
-  when they could otherwise be imported into client code.
-- Treat model-generated SVG as untrusted input. Validate its XML/SVG structure and
-  use an allowlist-based sanitization approach, rejecting scripts, event handlers,
-  `foreignObject`, and external resource references. Regex alone is not sufficient.
-- Integrate SVG parsing and safety checks with Zod refinements or transforms.
-  A Zod string schema alone does not validate SVG markup or sanitize it.
-- Preview only validated output in a restricted rendering context. Do not inject
-  raw model output into the page with `dangerouslySetInnerHTML`.
-- Download the same validated SVG used by the preview.
+- Obtain owner IDs from server-authenticated Clerk sessions, never client input.
+  Scope every private read/write to the owner. Proxy initialization alone is not
+  authorization.
+- Preserve conversation revision checks, request idempotency, claims and recovery.
+  Do not hold a database transaction open during model generation.
+- Ordinary saved results are public by link by default. Public reads return only
+  validated SVG source and must exclude private conversations, including legacy IDs.
+- Check `feature-rag` in Clerk private metadata for collection APIs/pages and
+  collection-based conversations. Capability removal must not expose private SVGs.
+- Adding a result to a collection permanently makes its conversation private and
+  revokes public links/feedback permissions. Deletion preserves privacy and removes
+  retained reference source copies.
+- Private runs must not start Braintrust generation observers or accept feedback.
+  Ordinary tracking is opt-in and identifies users by Clerk ID, not profile email.
+  User-entered content can appear in logs; do not claim automatic redaction.
+- Keep database-enforced collection quotas and explicit processing retries.
+  Generation request limits are not shared user rate/cost quotas.
 
-## Client-side live preview
+## Secrets and SVG safety
 
-- Render SVG in a Client Component and update the preview during generation.
-- Start by evaluating an SVG `Blob` with MIME type `image/svg+xml`, exposed through
-  an object URL to an `<img>`. This uses the browser's SVG image renderer without
-  injecting markup into the page. Revoke obsolete object URLs on replacement and
-  component unmount.
-- Streaming chunks can end inside a tag or attribute. Do not treat each chunk as
-  a valid SVG document. Prototype a bounded parser-based approach that builds
-  standalone preview snapshots from completed elements, then validates and
-  sanitizes each snapshot before rendering. Never repair markup using regex alone.
-- Throttle preview updates and retain the last valid preview while the next
-  snapshot is incomplete. Show generation progress before the first valid snapshot.
-- Keep temporary preview snapshots separate from the final result. Validate the
-  complete output on the server before allowing download or reporting success.
-- Verify progressive rendering in the browser before claiming real-time preview
-  works. Document any limitations discovered in the streaming prototype.
+- Keep OpenAI, Clerk secret, database, Tavily, Braintrust and feedback credentials
+  exclusively on the server. Never expose them through props, responses, logs or
+  browser bundles, and never prefix secrets with `NEXT_PUBLIC_`.
+- Keep local secrets in ignored `.env.local`. Never ask for keys in chat or commit
+  real credentials. Keep `.env.example` placeholder-only and allowed in `.gitignore`.
+- Use `server-only` for shared modules that access secrets or call providers.
+- Treat generated/uploaded SVG and retrieved references as untrusted input.
+  Use the XML parser and element/attribute allowlists through Zod validation;
+  regex alone is not a sanitizer.
+- Reject executable content and external resources. Maintain SVG size, dimensions,
+  element count and depth limits; preserve local fragment-only references.
+- Render only validated snapshots/final SVG as Blob image URLs. Never inject raw
+  output with `dangerouslySetInnerHTML` or repair incomplete markup using regex.
+- Keep drafts separate from final artwork. Throttle parser-based snapshots, retain
+  the last safe preview, revoke obsolete URLs, and download only the complete
+  server-validated result.
+- Validate SVG before Sharp rendering. Preserve transparent padding in the shared
+  renderer unless a requested change explicitly changes that contract.
 
-## Incremental roadmap
+## Database and verification
 
-1. Install dependencies, read the relevant framework guides, and verify the starter.
-2. Add the AI SDK, Zod, server-only model configuration, and environment setup docs.
-3. Implement bounded streamed prompt-to-SVG generation, Zod schemas, and SVG safety
-   checks on the server.
-4. Prototype safe progressive SVG rendering, then add the prompt form, client-side
-   live preview, SVG source, download, and loading/error states.
-5. Evaluate a small fixed set of prompts for visual fidelity, SVG validity,
-   latency, and cost. Use the results to guide model and prompt improvements.
-6. Prepare the first deployment on Vercel. Configure secrets in Vercel environment
-   settings and add appropriate request/cost protection before public access.
-7. Explore a bounded generate–validate–repair agent loop once the basic flow works.
-
-This roadmap is direction for future work, not a requirement to implement every
-step in one change. Authentication, persistence, vector databases, and multiple
-agents are outside the initial scope unless a concrete need emerges.
-
-## Verification and documentation
-
-- For application changes, run `npm run lint` and `npm run build` when dependencies
-  are available. Report failures and checks that could not be run accurately.
+- Keep migrations reviewable and explicitly applied. Builds/API requests must not
+  run them. Separate development and production databases.
+- Run `npm run lint` and `npm run build` for application changes. If environment
+  restrictions block Turbopack, report the failure and check the Webpack fallback.
+- Run focused existing tests for relevant changes; add tests for important safety,
+  ownership, input limits, concurrency and bounded repair behavior. Mock providers
+  instead of spending API credits in automated tests.
+- Integration tests require an explicitly configured disposable
+  `svg_conversations_test*` PostgreSQL database with pgvector. They drop/recreate
+  and truncate tables; never point them at development or production data.
 - Check user-facing changes in the browser, including loading, failed requests,
-  invalid SVG, and downloads where relevant.
-- Add focused tests for important behavior such as input limits, SVG validation,
-  and bounded repair attempts. Mock model responses for automated tests rather
-  than spending API credits on every run.
-- Keep `README.md` up to date as functionality is implemented: local setup,
-  environment variables, architecture, verified model choice, and Vercel deployment.
-- Never claim a live model call or deployed behavior was verified unless it was
-  actually checked.
+  invalid SVG and downloads where relevant. Keep test-auth fixtures outside
+  production routes.
+- Keep eval configuration/comparisons reproducible. Document rendering/scoring
+  changes and distinguish visual scoring from XML/safety validation.
+- Never claim live provider calls, account settings or deployed behavior were
+  checked unless they actually were. Report checks and limitations in the task
+  response; keep public docs focused on current setup and behavior.

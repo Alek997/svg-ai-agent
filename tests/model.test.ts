@@ -5,6 +5,25 @@ import { MockLanguageModelV4 } from "ai/test";
 import { generateSvg } from "../lib/ai/generate-svg";
 import { buildSvgMessages, createSvgAgent } from "../lib/ai/svg-agent";
 import { createWebSearch } from "../lib/ai/web-search";
+import { getConfiguredModelName, getLLM } from "../lib/ai/model";
+
+test("drawing model and displayed model default to Luna and respect server overrides", (context) => {
+  const previousKey = process.env.OPENAI_API_KEY;
+  const previousModel = process.env.OPENAI_MODEL;
+  context.after(() => {
+    if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previousKey;
+    if (previousModel === undefined) delete process.env.OPENAI_MODEL;
+    else process.env.OPENAI_MODEL = previousModel;
+  });
+  process.env.OPENAI_API_KEY = "mock-key";
+  delete process.env.OPENAI_MODEL;
+  assert.equal(getConfiguredModelName(), "gpt-6-luna");
+  assert.equal(getLLM().modelId, "gpt-6-luna");
+  process.env.OPENAI_MODEL = "configured-model";
+  assert.equal(getConfiguredModelName(), "configured-model");
+  assert.equal(getLLM().modelId, "configured-model");
+});
 
 const output = {
   message: "Created a blue circle.",

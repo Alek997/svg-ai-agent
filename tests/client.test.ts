@@ -15,7 +15,7 @@ test("saved conversation loads preserve denied/missing and temporary failure sta
 
 const result: GenerationEvent = {
   type: "result",
-  usage: { model: "gpt-4.1-mini", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 },
+  usage: { model: "gpt-6-luna", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 },
   message: "Created a café icon.",
   document: {
     name: "cafe.svg",

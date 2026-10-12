@@ -4,9 +4,11 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { ModelConfigurationError } from "./errors";
 
+export const DEFAULT_OPENAI_MODEL = "gpt-6-luna";
+
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),
-  OPENAI_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
+  OPENAI_MODEL: z.string().trim().min(1).default(DEFAULT_OPENAI_MODEL),
 });
 
 function getEnvironment() {
