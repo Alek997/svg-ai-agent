@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { SvgDocument } from "@/lib/workspace/types";
 import { ShareSvg } from "./share-svg";
+import { useSvgBlobRef } from "@/lib/workspace/use-svg-blob-ref";
 
 export function SvgCanvas({
   document,
@@ -29,14 +30,11 @@ export function SvgCanvas({
   } | null>(null);
   const copyStatus =
     copyFeedback?.source === document.source ? copyFeedback.status : null;
-  const image = useRef<HTMLImageElement>(null);
-  const objectUrl = useRef<string | null>(null);
-  const attachImage = useCallback((node: HTMLImageElement | null) => {
-    image.current = node;
-    // Returning from Code view mounts a new img, but reuses the same Blob URL.
-    if (node && objectUrl.current) node.src = objectUrl.current;
-  }, []);
-  const download = useRef<HTMLAnchorElement>(null);
+  const attachImage = useSvgBlobRef<HTMLImageElement>(document.source, "src");
+  const attachDownload = useSvgBlobRef<HTMLAnchorElement>(
+    document.source,
+    "href",
+  );
   useEffect(() => {
     if (copyFeedback?.status !== "copied") return;
     const timeout = setTimeout(() => setCopyFeedback(null), 2000);
@@ -52,26 +50,6 @@ export function SvgCanvas({
       setCopyFeedback({ source, status: "error" });
     }
   }
-
-  useEffect(() => {
-    const url = URL.createObjectURL(
-      new Blob([document.source], { type: "image/svg+xml" }),
-    );
-    objectUrl.current = url;
-    if (image.current) image.current.src = url;
-    return () => {
-      URL.revokeObjectURL(url);
-      if (objectUrl.current === url) objectUrl.current = null;
-    };
-  }, [document.source]);
-
-  // Download availability changes independently from image rendering.
-  useEffect(() => {
-    if (!download.current) return;
-    if (isLoading || !objectUrl.current)
-      download.current.removeAttribute("href");
-    else download.current.href = objectUrl.current;
-  }, [document.source, isLoading]);
 
   return (
     <section
@@ -251,7 +229,7 @@ export function SvgCanvas({
             </Button>
           ) : (
             <a
-              ref={download}
+              ref={attachDownload}
               download={document.name}
               className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
             >

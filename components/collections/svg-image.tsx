@@ -1,15 +1,8 @@
 /* eslint-disable @next/next/no-img-element -- Blob URLs use the restricted SVG image renderer. */
 "use client";
-import { useEffect, useRef } from "react";
+import { useSvgBlobRef } from "@/lib/workspace/use-svg-blob-ref";
 export function SvgImage({ source, label }: { source: string; label: string }) {
-  const image = useRef<HTMLImageElement>(null);
-  useEffect(() => {
-    const url = URL.createObjectURL(
-      new Blob([source], { type: "image/svg+xml" }),
-    );
-    if (image.current) image.current.src = url;
-    return () => URL.revokeObjectURL(url);
-  }, [source]);
+  const image = useSvgBlobRef<HTMLImageElement>(source, "src");
   // Server-validated SVG in the browser's restricted image renderer.
   return (
     <img

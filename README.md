@@ -302,6 +302,11 @@ same `TEST_DATABASE_URL`, then open
 providers and a loopback-only test owner, outside production routes. Synthetic
 SVG fixtures are in `tests/browser/fixtures/`.
 
+For standalone workspace and SVG resource lifecycle regressions, run
+`node --import tsx tests/browser/effects-server.mts` and open
+[127.0.0.1:4319](http://127.0.0.1:4319). The page runs React Strict Mode checks
+with mocked network responses; it needs no database, authentication, or providers.
+
 Validate the eval dataset without model calls:
 
 ```bash

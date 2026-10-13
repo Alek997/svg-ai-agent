@@ -1,22 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { z } from "zod";
 import { listConversations } from "@/lib/conversations/client";
 import type { conversationListSchema } from "@/lib/conversations/contracts";
+import { useSvgBlobRef } from "@/lib/workspace/use-svg-blob-ref";
 import type { SvgDocument } from "@/lib/workspace/types";
 
 type Item = z.infer<typeof conversationListSchema>["conversations"][number];
 function Artwork({ document }: { document: SvgDocument }) {
-  const image = useRef<HTMLImageElement>(null);
-  useEffect(() => {
-    const url = URL.createObjectURL(
-      new Blob([document.source], { type: "image/svg+xml" }),
-    );
-    if (image.current) image.current.src = url;
-    return () => URL.revokeObjectURL(url);
-  }, [document.source]);
+  const image = useSvgBlobRef<HTMLImageElement>(document.source, "src");
   // The API validates stored SVG; image rendering keeps it outside the page DOM.
   return (
     // eslint-disable-next-line @next/next/no-img-element

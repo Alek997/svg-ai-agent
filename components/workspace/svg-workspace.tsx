@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { WorkspaceCollections } from "../collections/workspace-collections";
 import { ChatPanel } from "./chat-panel";
@@ -32,30 +32,60 @@ const welcome: ChatMessage = {
   content:
     "Describe an illustration, icon, or idea to create an SVG. After it’s ready, send a follow-up message to refine it.\n\nThe canvas starts with sample artwork for inspiration.",
 };
-export function SvgWorkspace({
-  trackingEnabled = false,
-  initialConversationId,
-  ragEnabled = false,
-}: {
+type WorkspaceProps = {
   ragEnabled?: boolean;
   trackingEnabled?: boolean;
   initialConversationId?: string;
-}) {
+};
+
+export function SvgWorkspace(props: WorkspaceProps) {
   const pathname = usePathname();
-  const [collectionId, setCollectionId] = useState("");
-  const [privateConversation, setPrivateConversation] = useState(false);
   const routeId = pathname.startsWith("/conversations/")
     ? pathname.split("/")[2]
     : null;
+  const [session, setSession] = useState({ routeId, key: 0 });
+  if (session.routeId !== routeId) {
+    setSession({ routeId, key: session.key + 1 });
+  }
+  return (
+    <WorkspaceSession
+      {...props}
+      key={session.key}
+      routeId={routeId}
+      onCreated={(id) => {
+        // Saving the first message changes the URL, but continues this session.
+        setSession((previous) => ({ ...previous, routeId: id }));
+      }}
+      onNewSession={() =>
+        setSession((previous) => ({ ...previous, key: previous.key + 1 }))
+      }
+    />
+  );
+}
+
+function WorkspaceSession({
+  trackingEnabled = false,
+  ragEnabled = false,
+  routeId,
+  onCreated,
+  onNewSession,
+}: WorkspaceProps & {
+  routeId: string | null;
+  onCreated: (id: string) => void;
+  onNewSession: () => void;
+}) {
+  const pathname = routeId ? `/conversations/${routeId}` : "/";
+  const [collectionId, setCollectionId] = useState("");
+  const [privateConversation, setPrivateConversation] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(
-    initialConversationId ? [] : [welcome],
+    routeId ? [] : [welcome],
   );
   const [document, setDocument] = useState<SvgDocument | null>(null);
   const [publicId, setPublicId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [opening, setOpening] = useState(!!initialConversationId);
+  const [opening, setOpening] = useState(!!routeId);
   const [displayedId, setDisplayedId] = useState<string | null>(null);
-  const [ready, setReady] = useState(!initialConversationId);
+  const [ready, setReady] = useState(!routeId);
   const [activeSavedRun, setActiveSavedRun] = useState<string | null>(null);
   const [leaseExpiresAt, setLeaseExpiresAt] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -69,18 +99,17 @@ export function SvgWorkspace({
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [retryInput, setRetryInput] = useState<Submission | null>(null);
   const [retrySeconds, setRetrySeconds] = useState(0);
-  const [loadVersion, setLoadVersion] = useState(0);
   const retryAvailableAt = useRef(0);
   const conversationId = useRef<string | null>(null);
   const revision = useRef(0);
-  const loadedVersion = useRef(0);
+  const openRequest = useRef<AbortController | null>(null);
   const activeRequest = useRef<AbortController | null>(null);
   const pendingCreation = useRef<{ id: string; content: string } | null>(null);
   const resetDialog = useRef<HTMLDialogElement>(null);
   const keepWorking = useRef<HTMLButtonElement>(null);
   const pendingNavigation = useRef<string>("/");
 
-  function restore(page: ConversationPage, merge = false) {
+  const restore = useCallback((page: ConversationPage, merge = false) => {
     conversationId.current = page.conversation.id;
     setDisplayedId(page.conversation.id);
     revision.current = page.conversation.revision;
@@ -124,20 +153,15 @@ export function SvgWorkspace({
       setRetryInput(null);
       setError(null);
     }
-  }
+  }, []);
 
-  useEffect(() => {
-    // A failed open leaves the saved ID null; returning home must still reset the workspace.
-    if (
-      routeId &&
-      routeId === conversationId.current &&
-      loadVersion === loadedVersion.current
-    )
-      return;
-    loadedVersion.current = loadVersion;
+  const refreshSavedConversation = useCallback(async () => {
+    if (!routeId) return;
+    openRequest.current?.abort();
     const controller = new AbortController();
+    openRequest.current = controller;
     // Async loading also makes effect cleanup safe during development Strict Mode.
-    void Promise.resolve().then(async () => {
+    await Promise.resolve().then(async () => {
       if (controller.signal.aborted) return;
       activeRequest.current?.abort();
       activeRequest.current = null;
@@ -150,35 +174,6 @@ export function SvgWorkspace({
       setError(null);
       setRetryInput(null);
       setRetrySeconds(0);
-      if (routeId !== conversationId.current) {
-        setDraft("");
-        setMessages([]);
-        setDocument(null);
-        setPublicId(null);
-        setOlderCursor(null);
-        setActiveSavedRun(null);
-        setLeaseExpiresAt(null);
-        conversationId.current = null;
-        setDisplayedId(null);
-      }
-      if (!routeId) {
-        conversationId.current = null;
-        revision.current = 0;
-        pendingCreation.current = null;
-        setDisplayedId(null);
-        setCollectionId("");
-        setPrivateConversation(false);
-        setDraft("");
-        setMessages([welcome]);
-        setDocument(null);
-        setPublicId(null);
-        setOlderCursor(null);
-        setActiveSavedRun(null);
-        setLeaseExpiresAt(null);
-        setOpening(false);
-        setReady(true);
-        return;
-      }
       setOpening(true);
       try {
         const page = await loadConversation(routeId, controller.signal);
@@ -202,9 +197,23 @@ export function SvgWorkspace({
         if (!controller.signal.aborted) setOpening(false);
       }
     });
-    return () => controller.abort();
-  }, [routeId, loadVersion]);
-  useEffect(() => () => activeRequest.current?.abort(), []);
+  }, [routeId, restore]);
+
+  useEffect(() => {
+    // Navigation resets state through the session key. Initial display loads
+    // saved data; adopting a just-created conversation needs no extra fetch.
+    if (!routeId || routeId === conversationId.current) return;
+    void refreshSavedConversation();
+    return () => openRequest.current?.abort();
+  }, [routeId, refreshSavedConversation]);
+  useEffect(
+    () => () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+      openRequest.current?.abort();
+    },
+    [],
+  );
   useEffect(() => {
     if (!retrySeconds) return;
     const interval = setInterval(
@@ -223,7 +232,7 @@ export function SvgWorkspace({
     if (!activeSavedRun || isLoading || !routeId) return;
     // Reconcile once after the lease, rather than polling throughout generation.
     const timer = setTimeout(
-      () => setLoadVersion((value) => value + 1),
+      () => void refreshSavedConversation(),
       Math.min(
         RUN_LEASE_MS + 1000,
         Math.max(
@@ -233,7 +242,13 @@ export function SvgWorkspace({
       ),
     );
     return () => clearTimeout(timer);
-  }, [activeSavedRun, leaseExpiresAt, isLoading, routeId]);
+  }, [
+    activeSavedRun,
+    leaseExpiresAt,
+    isLoading,
+    routeId,
+    refreshSavedConversation,
+  ]);
   const hasUnsavedWork = !!draft.trim() || isLoading;
   useEffect(() => {
     if (!hasUnsavedWork) return;
@@ -250,14 +265,19 @@ export function SvgWorkspace({
       pendingNavigation.current = path;
       resetDialog.current?.showModal();
       keepWorking.current?.focus();
-    } else window.history.pushState(null, "", path);
+    } else {
+      if (path === "/" && pathname === "/") onNewSession();
+      else window.history.pushState(null, "", path);
+    }
   }
   function confirmNavigation() {
     resetDialog.current?.close();
     activeRequest.current?.abort();
     window.history.pushState(null, "", pendingNavigation.current);
-    if (pendingNavigation.current === pathname)
-      setLoadVersion((value) => value + 1);
+    if (pendingNavigation.current === pathname) {
+      if (pathname === "/") onNewSession();
+      else void refreshSavedConversation();
+    }
   }
   async function olderMessages() {
     if (!conversationId.current || !olderCursor || loadingOlder) return;
@@ -394,7 +414,7 @@ export function SvgWorkspace({
       }
       if (error instanceof GenerationRequestError && error.status === 409) {
         setRetryInput(null);
-        setLoadVersion((value) => value + 1);
+        void refreshSavedConversation();
       } else if (!excluded) {
         retryAvailableAt.current = Date.now() + 15_000;
         setRetrySeconds(15);
@@ -455,6 +475,7 @@ export function SvgWorkspace({
         conversationId.current = saved.id;
         revision.current = saved.revision;
         setDisplayedId(saved.id);
+        onCreated(saved.id);
         window.history.replaceState(null, "", `/conversations/${saved.id}`);
         setHistoryRefresh((value) => value + 1);
       } catch (error) {
@@ -516,7 +537,7 @@ export function SvgWorkspace({
           onAdded={() => {
             setPrivateConversation(true);
             setPublicId(null);
-            setLoadVersion((value) => value + 1);
+            void refreshSavedConversation();
           }}
         />
       )}
@@ -562,7 +583,7 @@ export function SvgWorkspace({
           onLoadOlder={() => void olderMessages()}
           onRefreshConversation={
             routeId && !isLoading
-              ? () => setLoadVersion((value) => value + 1)
+              ? () => void refreshSavedConversation()
               : undefined
           }
         />
