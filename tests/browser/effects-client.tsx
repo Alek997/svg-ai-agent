@@ -6,6 +6,8 @@ import { SvgCanvas } from "../../components/workspace/svg-canvas";
 import { SvgImage } from "../../components/collections/svg-image";
 import { sampleDocument } from "../../lib/workspace/sample";
 import "./navigation";
+import { renderCounts } from "./render-counts";
+import { runStateOwnershipChecks } from "./state-ownership";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const fixture = document.getElementById("fixture")!;
@@ -172,6 +174,15 @@ async function run() {
 
   await navigate("/");
   await render(<SvgWorkspace />);
+  const canvasRenders = renderCounts.get("SvgCanvas");
+  const chatRenders = renderCounts.get("ChatPanel");
+  await draft("Unsent home draft");
+  await draft("Unsent home draft updated");
+  check(
+    renderCounts.get("SvgCanvas") === canvasRenders &&
+      renderCounts.get("ChatPanel") === chatRenders,
+    "Typing updates composer and navigation guard without rendering canvas or chat panel",
+  );
   await draft("Unsent home draft");
   await click("Start a new icon");
   await click("Keep working");
@@ -281,6 +292,11 @@ async function run() {
   await navigate("/");
   await render(<></>);
   check(liveUrls.size === 0, "Workspace teardown releases all SVG resources");
+  await runStateOwnershipChecks({ fixture, render, click, check });
+  check(
+    liveUrls.size === 0,
+    "All state ownership checks release their SVG URLs",
+  );
   document.title = "PASS: effect refactor regressions";
 }
 void run().catch((error) => {

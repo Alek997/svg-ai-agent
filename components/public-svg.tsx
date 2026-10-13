@@ -11,8 +11,6 @@ type ArtworkState =
 export function PublicSvg({ id }: { id: string }) {
   const [state, setState] = useState<ArtworkState>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState(false);
   const endpoint = `/api/public/svgs/${encodeURIComponent(id)}`;
 
   useEffect(() => {
@@ -42,32 +40,6 @@ export function PublicSvg({ id }: { id: string }) {
     };
   }, [endpoint, attempt]);
 
-  async function download() {
-    setDownloading(true);
-    setDownloadError(false);
-    try {
-      // Re-read so deletion after opening the page produces the unavailable state.
-      const response = await fetch(endpoint, { cache: "no-store" });
-      if (!response.ok) {
-        if (response.status === 404) setState({ kind: "missing" });
-        else setDownloadError(true);
-        return;
-      }
-      const url = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "artwork.svg";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      setDownloadError(true);
-    } finally {
-      setDownloading(false);
-    }
-  }
-
   return (
     <main className="flex min-h-dvh flex-col bg-stone-50 text-stone-800">
       <header className="flex items-center justify-between border-b border-stone-200 bg-white px-6 py-5">
@@ -88,16 +60,10 @@ export function PublicSvg({ id }: { id: string }) {
               onError={() => setState({ kind: "error" })}
             />
           </div>
-          <footer className="flex flex-col items-center gap-3 border-t border-stone-200 bg-white p-5">
-            <Button onClick={() => void download()} disabled={downloading}>
-              {downloading ? "Checking SVG…" : "Download SVG"}
-            </Button>
-            {downloadError && (
-              <p role="alert" className="text-sm text-red-700">
-                Download failed. Please try again.
-              </p>
-            )}
-          </footer>
+          <PublicDownload
+            endpoint={endpoint}
+            onMissing={() => setState({ kind: "missing" })}
+          />
         </>
       ) : (
         <section
@@ -141,5 +107,58 @@ export function PublicSvg({ id }: { id: string }) {
         </section>
       )}
     </main>
+  );
+}
+
+function PublicDownload({
+  endpoint,
+  onMissing,
+}: {
+  endpoint: string;
+  onMissing: () => void;
+}) {
+  const [status, setStatus] = useState<"idle" | "downloading" | "error">(
+    "idle",
+  );
+  async function download() {
+    setStatus("downloading");
+    let failed = false;
+    try {
+      // Re-read so deletion after opening the page produces the unavailable state.
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) {
+        if (response.status === 404) onMissing();
+        else failed = true;
+        return;
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "artwork.svg";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      failed = true;
+    } finally {
+      setStatus(failed ? "error" : "idle");
+    }
+  }
+
+  return (
+    <footer className="flex flex-col items-center gap-3 border-t border-stone-200 bg-white p-5">
+      <Button
+        onClick={() => void download()}
+        disabled={status === "downloading"}
+      >
+        {status === "downloading" ? "Checking SVG…" : "Download SVG"}
+      </Button>
+      {status === "error" && (
+        <p role="alert" className="text-sm text-red-700">
+          Download failed. Please try again.
+        </p>
+      )}
+    </footer>
   );
 }

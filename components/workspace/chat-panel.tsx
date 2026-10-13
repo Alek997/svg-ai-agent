@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { RetryGeneration } from "./retry-generation";
 import { ChatComposer } from "./chat-composer";
 import { ConversationHistory } from "./conversation-history";
 import { ChatMessage } from "./chat-message";
@@ -19,15 +20,13 @@ type ChatPanelProps = {
   onRefreshConversation?: () => void;
   onSend: (content: string) => void;
   onReset: () => void;
-  draft: string;
-  onDraftChange: (draft: string) => void;
   isLoading: boolean;
   progress: number;
   activity: string;
   error: string | null;
   trackingEnabled?: boolean;
   onRetry?: () => void;
-  retrySeconds?: number;
+  retryAvailableAt?: number;
 };
 
 export function ChatPanel({
@@ -41,14 +40,12 @@ export function ChatPanel({
   onRefreshConversation,
   onSend,
   onReset,
-  draft,
-  onDraftChange,
   isLoading,
   progress,
   activity,
   error,
   onRetry,
-  retrySeconds = 0,
+  retryAvailableAt = 0,
   trackingEnabled = false,
 }: ChatPanelProps) {
   const history = useRef<HTMLDivElement>(null);
@@ -182,24 +179,16 @@ export function ChatPanel({
         >
           <p>{error}</p>
           {onRetry && (
-            <Button
-              onClick={onRetry}
-              disabled={isLoading || retrySeconds > 0}
-              className="mt-2"
-            >
-              {retrySeconds > 0
-                ? `Retry in ${retrySeconds}s`
-                : "Retry generation"}
-            </Button>
+            <RetryGeneration
+              key={retryAvailableAt}
+              availableAt={retryAvailableAt}
+              disabled={isLoading}
+              onRetry={onRetry}
+            />
           )}
         </div>
       )}
-      <ChatComposer
-        onSend={onSend}
-        draft={draft}
-        onDraftChange={onDraftChange}
-        isLoading={isLoading}
-      />
+      <ChatComposer onSend={onSend} isLoading={isLoading} />
     </aside>
   );
 }

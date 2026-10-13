@@ -13,28 +13,36 @@ export function GenerationFeedback({
   token: string;
   expiresAt?: number;
 }) {
-  const id = useId();
-  const [rating, setRating] = useState<0 | 1 | null>(null);
-  const [comment, setComment] = useState("");
-  const [reason, setReason] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle",
-  );
-  const [error, setError] = useState("");
-  const sending = useRef(false);
-  const [expired, setExpired] = useState(false);
+  const [expired, setExpired] = useState<number | null>(null);
   useEffect(() => {
     if (!expiresAt) return;
     let timer: ReturnType<typeof setTimeout>;
     function check() {
       const remaining = expiresAt! - Date.now();
-      if (remaining <= 0) setExpired(true);
+      if (remaining <= 0) setExpired(expiresAt!);
       else timer = setTimeout(check, Math.min(remaining, 2_147_483_647));
     }
     timer = setTimeout(check, 0);
     return () => clearTimeout(timer);
   }, [expiresAt]);
 
+  if (expiresAt !== undefined && expired === expiresAt)
+    return (
+      <p className="mt-3 text-xs text-stone-400">Feedback period has ended.</p>
+    );
+
+  return <FeedbackForm key={token} token={token} />;
+}
+
+function FeedbackForm({ token }: { token: string }) {
+  const id = useId();
+  const [rating, setRating] = useState<0 | 1 | null>(null);
+  const [comment, setComment] = useState("");
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState<
+    { kind: "idle" | "saving" | "saved" } | { kind: "error"; message: string }
+  >({ kind: "idle" });
+  const sending = useRef(false);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (sending.current) return;
@@ -46,7 +54,7 @@ export function GenerationFeedback({
     });
     if (!parsed.success) return;
     sending.current = true;
-    setStatus("saving");
+    setStatus({ kind: "saving" });
     try {
       const response = await fetch("/api/feedback", {
         method: "POST",
@@ -61,25 +69,21 @@ export function GenerationFeedback({
             ? body.error
             : "Feedback could not be saved. Please try again.",
         );
-      setStatus("saved");
+      setStatus({ kind: "saved" });
     } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Feedback could not be saved. Please try again.",
-      );
-      setStatus("error");
+      setStatus({
+        kind: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Feedback could not be saved. Please try again.",
+      });
     } finally {
       sending.current = false;
     }
   }
 
-  if (expired)
-    return (
-      <p className="mt-3 text-xs text-stone-400">Feedback period has ended.</p>
-    );
-
-  if (status === "saved")
+  if (status.kind === "saved")
     return (
       <p role="status" className="mt-3 text-xs text-stone-500">
         Thanks for your feedback.
@@ -88,7 +92,7 @@ export function GenerationFeedback({
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-2 text-xs text-stone-600">
-      <fieldset disabled={status === "saving"} className="space-y-2">
+      <fieldset disabled={status.kind === "saving"} className="space-y-2">
         <legend className="sr-only">Rate this SVG (optional)</legend>
         <div className="flex items-center gap-1 text-stone-400">
           <span className="mr-1">Rate this SVG</span>
@@ -100,7 +104,7 @@ export function GenerationFeedback({
               aria-pressed={rating === value}
               onClick={() => {
                 setRating(value);
-                setStatus("idle");
+                setStatus({ kind: "idle" });
               }}
               className={`rounded-md px-2 py-1 disabled:opacity-50 ${rating === value ? "bg-stone-100 text-stone-700" : "hover:bg-stone-50 hover:text-stone-600"}`}
             >
@@ -143,14 +147,14 @@ export function GenerationFeedback({
               type="submit"
               className="rounded-md border border-stone-200 px-3 py-1.5 hover:bg-stone-50 disabled:opacity-50"
             >
-              {status === "saving" ? "Sending…" : "Send feedback"}
+              {status.kind === "saving" ? "Sending…" : "Send feedback"}
             </button>
           </>
         )}
       </fieldset>
-      {status === "error" && (
+      {status.kind === "error" && (
         <p role="alert" className="text-red-700">
-          {error}
+          {status.message}
         </p>
       )}
     </form>

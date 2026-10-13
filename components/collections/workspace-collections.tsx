@@ -20,9 +20,7 @@ export function WorkspaceCollections({
   disabled: boolean;
 }) {
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
-  const [target, setTarget] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void collectionRequest<{ collections: CollectionSummary[] }>(
@@ -36,21 +34,6 @@ export function WorkspaceCollections({
       });
     return () => controller.abort();
   }, []);
-  async function add() {
-    if (!conversationId || !target) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await collectionRequest(`/${target}/add-result`, { conversationId });
-      onAdded();
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "Adding artwork failed.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <div className="shrink-0 space-y-2 border-b border-stone-200 bg-white px-6 py-3 text-xs text-stone-600">
       {!conversationId ? (
@@ -87,33 +70,12 @@ export function WorkspaceCollections({
         </p>
       )}
       {conversationId && hasArtwork && (
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            aria-label="Add artwork to collection"
-            className="rounded-lg border border-stone-200 px-3 py-2"
-            value={target}
-            disabled={disabled || busy}
-            onChange={(e) => setTarget(e.target.value)}
-          >
-            <option value="">Choose collection</option>
-            {collections.map((collection) => (
-              <option key={collection.id} value={collection.id}>
-                {collection.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="rounded-lg border border-stone-200 px-3 py-2"
-            disabled={!target || disabled || busy}
-            onClick={() => void add()}
-          >
-            {busy ? "Adding…" : "Add to collection"}
-          </button>
-          <span>
-            Copies the saved artwork for indexing. Makes this conversation
-            permanently private and revokes all public links.
-          </span>
-        </div>
+        <AddToCollection
+          collections={collections}
+          conversationId={conversationId}
+          disabled={disabled}
+          onAdded={onAdded}
+        />
       )}
       {error && (
         <p role="alert" className="text-red-700">
@@ -121,5 +83,72 @@ export function WorkspaceCollections({
         </p>
       )}
     </div>
+  );
+}
+
+function AddToCollection({
+  collections,
+  conversationId,
+  disabled,
+  onAdded,
+}: {
+  collections: CollectionSummary[];
+  conversationId: string;
+  disabled: boolean;
+  onAdded: () => void;
+}) {
+  const [target, setTarget] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function add() {
+    if (!conversationId || !target) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await collectionRequest(`/${target}/add-result`, { conversationId });
+      onAdded();
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Adding artwork failed.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          aria-label="Add artwork to collection"
+          className="rounded-lg border border-stone-200 px-3 py-2"
+          value={target}
+          disabled={disabled || busy}
+          onChange={(e) => setTarget(e.target.value)}
+        >
+          <option value="">Choose collection</option>
+          {collections.map((collection) => (
+            <option key={collection.id} value={collection.id}>
+              {collection.name}
+            </option>
+          ))}
+        </select>
+        <button
+          className="rounded-lg border border-stone-200 px-3 py-2"
+          disabled={!target || disabled || busy}
+          onClick={() => void add()}
+        >
+          {busy ? "Adding…" : "Add to collection"}
+        </button>
+        <span>
+          Copies the saved artwork for indexing. Makes this conversation
+          permanently private and revokes all public links.
+        </span>
+      </div>
+      {error && (
+        <p role="alert" className="text-red-700">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
