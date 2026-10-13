@@ -8,7 +8,17 @@ export const maxDuration = 30;
 
 export async function POST(request: Request) {
   const { userId } = await auth();
-  return handleFeedback(request, userId, trackingEnabled() ? process.env.BRAINTRUST_FEEDBACK_SECRET : undefined, async (id, feedback, ownerId) => {
-    await conversationStore.saveFeedback(ownerId, feedback.token, feedback, () => saveTrackingFeedback(id, feedback, ownerId));
-  });
+  return handleFeedback(
+    request,
+    userId,
+    trackingEnabled() ? process.env.BRAINTRUST_FEEDBACK_SECRET : undefined,
+    async (id, feedback, ownerId) => {
+      await conversationStore.saveFeedback(
+        ownerId,
+        feedback.token,
+        feedback,
+        () => saveTrackingFeedback(id, feedback, ownerId),
+      );
+    },
+  );
 }

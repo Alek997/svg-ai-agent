@@ -6,7 +6,10 @@ import {
 } from "./contracts";
 
 export class GenerationRequestError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
     super(message);
   }
 }
@@ -49,7 +52,10 @@ export async function requestGeneration(
     if (completed)
       throw new Error("Unexpected data after generation finished.");
     const event = generationEventSchema.parse(JSON.parse(line));
-    if (event.type === "error") { onEvent(event); throw new Error(event.message); }
+    if (event.type === "error") {
+      onEvent(event);
+      throw new Error(event.message);
+    }
     if (event.type === "result" || event.type === "reply") completed = true;
     onEvent(event);
   }

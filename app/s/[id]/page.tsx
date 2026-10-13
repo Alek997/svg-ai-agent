@@ -10,12 +10,22 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function SharedSvgPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SharedSvgPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
-  if (!publicIdSchema.safeParse(id).success && publicSvgIdSchema.safeParse(id).success) {
+  if (
+    !publicIdSchema.safeParse(id).success &&
+    publicSvgIdSchema.safeParse(id).success
+  ) {
     let publicId: string | null = null;
-    try { publicId = await resolvePublicId(id); }
-    catch { /* The client presents a retryable state if storage is unavailable. */ }
+    try {
+      publicId = await resolvePublicId(id);
+    } catch {
+      /* The client presents a retryable state if storage is unavailable. */
+    }
     if (publicId) redirect(`/s/${publicId}`);
   }
   return <PublicSvg key={id} id={id} />;

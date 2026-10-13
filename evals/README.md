@@ -96,12 +96,12 @@ dollar spend. There is no automatic full-request retry.
 Each scorer receives the case and task output, and returns a name, a score from
 0 to 1 (or `null` if unavailable), and optional evidence in `metadata`.
 
-| Scorer | Meaning |
-| --- | --- |
-| `completion` | 1 when the task finishes with accepted final output; otherwise 0 |
-| `safe_svg` | 1 when the final source passes the application's XML/SVG validator |
-| `tool_protocol` | 1 when a completed run respects the step bound, finishes with validated artwork, and reads artwork before proposing an edit |
-| `prompt_fidelity` (optional) | Fraction of checklist requirements visibly satisfied, assessed by the vision judge |
+| Scorer                       | Meaning                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `completion`                 | 1 when the task finishes with accepted final output; otherwise 0                                                            |
+| `safe_svg`                   | 1 when the final source passes the application's XML/SVG validator                                                          |
+| `tool_protocol`              | 1 when a completed run respects the step bound, finishes with validated artwork, and reads artwork before proposing an edit |
+| `prompt_fidelity` (optional) | Fraction of checklist requirements visibly satisfied, assessed by the vision judge                                          |
 
 Completion and safety will often move together because the task already rejects
 unsafe output. Neither checks appearance. Tool protocol checks observable behavior,

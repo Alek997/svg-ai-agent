@@ -14,13 +14,23 @@ type ReplyLanguage = z.infer<typeof replyLanguageSchema>;
 
 export const replyLanguageCriteria = {
   en: "English, including an explicit preference to receive English replies.",
-  sr_latn: "Serbian written in Latin script, including ASCII spellings such as cao, hvala, dovidjenja.",
+  sr_latn:
+    "Serbian written in Latin script, including ASCII spellings such as cao, hvala, dovidjenja.",
   sr_cyrl: "Serbian written in Cyrillic script, such as ћао, хвала, довиђења.",
-  other: "Another language, or insufficient evidence to choose a supported language. Reply in English.",
+  other:
+    "Another language, or insufficient evidence to choose a supported language. Reply in English.",
 } satisfies Record<ReplyLanguage, string>;
 
-type ConversationIntent = "greeting" | "thanks" | "farewell" | "acknowledge" | "clarify";
-type ReplyCopy = Record<Exclude<ConversationIntent, "clarify"> | "clarifyCreate" | "clarifyEdit", string>;
+type ConversationIntent =
+  | "greeting"
+  | "thanks"
+  | "farewell"
+  | "acknowledge"
+  | "clarify";
+type ReplyCopy = Record<
+  Exclude<ConversationIntent, "clarify"> | "clarifyCreate" | "clarifyEdit",
+  string
+>;
 
 const replies: Record<SupportedLanguage, ReplyCopy> = {
   en: {
@@ -49,7 +59,11 @@ const replies: Record<SupportedLanguage, ReplyCopy> = {
   },
 };
 
-export function getConversationReply(language: ReplyLanguage, intent: ConversationIntent, hasArtwork: boolean) {
+export function getConversationReply(
+  language: ReplyLanguage,
+  intent: ConversationIntent,
+  hasArtwork: boolean,
+) {
   const copy = replies[language === "other" ? "en" : language];
   return intent === "clarify"
     ? copy[hasArtwork ? "clarifyEdit" : "clarifyCreate"]

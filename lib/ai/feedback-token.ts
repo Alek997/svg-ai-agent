@@ -5,19 +5,35 @@ import { z } from "zod";
 const lifetimeMs = 7 * 24 * 60 * 60 * 1000;
 // Braintrust row IDs are opaque strings: the current SDK uses hex IDs,
 // while older configurations use UUIDs. The HMAC establishes authenticity.
-const payloadSchema = z.object({ id: z.string().min(1).max(200), issuedAt: z.number().int() }).strict();
+const payloadSchema = z
+  .object({ id: z.string().min(1).max(200), issuedAt: z.number().int() })
+  .strict();
 
 function signature(payload: string, userId: string, secret: string) {
-  return createHmac("sha256", secret).update(JSON.stringify(["svg-feedback-v1", userId, payload])).digest();
+  return createHmac("sha256", secret)
+    .update(JSON.stringify(["svg-feedback-v1", userId, payload]))
+    .digest();
 }
 
 // Ownership is signed server-side: a span ID alone is never permission to rate it.
-export function createFeedbackToken(id: string, userId: string, secret: string, now = Date.now()) {
-  const payload = Buffer.from(JSON.stringify({ id, issuedAt: now })).toString("base64url");
+export function createFeedbackToken(
+  id: string,
+  userId: string,
+  secret: string,
+  now = Date.now(),
+) {
+  const payload = Buffer.from(JSON.stringify({ id, issuedAt: now })).toString(
+    "base64url",
+  );
   return `${payload}.${signature(payload, userId, secret).toString("base64url")}`;
 }
 
-export function verifyFeedbackToken(token: string, userId: string, secret: string, now = Date.now()) {
+export function verifyFeedbackToken(
+  token: string,
+  userId: string,
+  secret: string,
+  now = Date.now(),
+) {
   try {
     if (token.length > 1000) return null;
     const parts = token.split(".");
@@ -25,9 +41,22 @@ export function verifyFeedbackToken(token: string, userId: string, secret: strin
     const [payload, signed] = parts;
     const supplied = Buffer.from(signed, "base64url");
     const expected = signature(payload, userId, secret);
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
-    const parsed = payloadSchema.safeParse(JSON.parse(Buffer.from(payload, "base64url").toString()));
-    if (!parsed.success || parsed.data.issuedAt > now || now - parsed.data.issuedAt > lifetimeMs) return null;
+    if (
+      supplied.length !== expected.length ||
+      !timingSafeEqual(supplied, expected)
+    )
+      return null;
+    const parsed = payloadSchema.safeParse(
+      JSON.parse(Buffer.from(payload, "base64url").toString()),
+    );
+    if (
+      !parsed.success ||
+      parsed.data.issuedAt > now ||
+      now - parsed.data.issuedAt > lifetimeMs
+    )
+      return null;
     return parsed.data.id;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }

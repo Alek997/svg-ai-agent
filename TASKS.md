@@ -20,21 +20,21 @@ Start with the collection retrieval → SVG generation flow:
 Work to do:
 
 - [ ] Replace generic function/callback names with names describing their actual
-  responsibility, such as `generateSvgWithoutCollectionReferences` and
-  `generateSvgWithCollectionReferences`.
+      responsibility, such as `generateSvgWithoutCollectionReferences` and
+      `generateSvgWithCollectionReferences`.
 - [ ] Use consistent names for data passed between functions. For example,
-  `detail` and `retrieval` currently refer to the same object; consider
-  `collectionRetrievalContext` throughout that call chain.
+      `detail` and `retrieval` currently refer to the same object; consider
+      `collectionRetrievalContext` throughout that call chain.
 - [ ] Name arguments by purpose, such as `svgGenerationRequest`,
-  `generationDependencies`, and `authenticatedUserId`. Use `collectionOwnerId`
-  when the value represents stored collection ownership. Avoid ambiguous local
-  names such as `owner` for a database query result.
+      `generationDependencies`, and `authenticatedUserId`. Use `collectionOwnerId`
+      when the value represents stored collection ownership. Avoid ambiguous local
+      names such as `owner` for a database query result.
 - [ ] Replace long positional parameter lists and repeated `undefined` arguments
-  with named parameter objects where that makes call sites easier to understand.
+      with named parameter objects where that makes call sites easier to understand.
 - [ ] Format dense one-line callbacks and functions into readable blocks. Keep
-  related responsibilities together; avoid adding abstractions solely for naming.
+      related responsibilities together; avoid adding abstractions solely for naming.
 - [ ] Review other application flows for the same naming problems after the
-  retrieval/generation flow is clear.
+      retrieval/generation flow is clear.
 
 Acceptance criteria:
 

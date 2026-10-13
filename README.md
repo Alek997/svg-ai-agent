@@ -67,23 +67,23 @@ settings. Only model values are preset; fill in credentials and project settings
 locally. Set the Clerk route variables to `/sign-in` and `/sign-up` in `.env.local`.
 Restart the development server after changing settings.
 
-| Variable | Purpose / default |
-| --- | --- |
-| `OPENAI_API_KEY` | Server credential for generation, moderation, policy checks, collection indexing and evals. |
-| `OPENAI_MODEL` | SVG generation model; defaults to `gpt-6-luna`. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk's browser-safe publishable key. |
-| `CLERK_SECRET_KEY` | Server credential for Clerk sessions and capability checks. |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Sign-in route; set to `/sign-in` locally. |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Sign-up route; set to `/sign-up` locally. |
-| `DATABASE_URL` | Server-only Neon PostgreSQL connection string. |
-| `TAVILY_API_KEY` | Optional server credential for reference search. |
-| `COLLECTION_DESCRIPTION_MODEL` | Collection image-description model; defaults to `gpt-6-luna`. |
-| `COLLECTION_EMBEDDING_MODEL` | Collection embedding model; defaults to `text-embedding-3-small`, with 1,536 requested dimensions. |
-| `BRAINTRUST_TRACKING_ENABLED` | App generation logging; disabled unless set to `true` with a Braintrust key. |
-| `BRAINTRUST_API_KEY` | Server credential for optional app logs or explicitly enabled eval uploads. |
-| `BRAINTRUST_PROJECT` | Braintrust project name; configure your own value locally. |
-| `BRAINTRUST_FEEDBACK_SECRET` | Signing secret of at least 32 characters for feedback permissions. |
-| `EVAL_JUDGE_MODEL` | Eval judge selected with `--judge`; defaults to `gpt-6-luna`. |
+| Variable                            | Purpose / default                                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                    | Server credential for generation, moderation, policy checks, collection indexing and evals.        |
+| `OPENAI_MODEL`                      | SVG generation model; defaults to `gpt-6-luna`.                                                    |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk's browser-safe publishable key.                                                              |
+| `CLERK_SECRET_KEY`                  | Server credential for Clerk sessions and capability checks.                                        |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`     | Sign-in route; set to `/sign-in` locally.                                                          |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL`     | Sign-up route; set to `/sign-up` locally.                                                          |
+| `DATABASE_URL`                      | Server-only Neon PostgreSQL connection string.                                                     |
+| `TAVILY_API_KEY`                    | Optional server credential for reference search.                                                   |
+| `COLLECTION_DESCRIPTION_MODEL`      | Collection image-description model; defaults to `gpt-6-luna`.                                      |
+| `COLLECTION_EMBEDDING_MODEL`        | Collection embedding model; defaults to `text-embedding-3-small`, with 1,536 requested dimensions. |
+| `BRAINTRUST_TRACKING_ENABLED`       | App generation logging; disabled unless set to `true` with a Braintrust key.                       |
+| `BRAINTRUST_API_KEY`                | Server credential for optional app logs or explicitly enabled eval uploads.                        |
+| `BRAINTRUST_PROJECT`                | Braintrust project name; configure your own value locally.                                         |
+| `BRAINTRUST_FEEDBACK_SECRET`        | Signing secret of at least 32 characters for feedback permissions.                                 |
+| `EVAL_JUDGE_MODEL`                  | Eval judge selected with `--judge`; defaults to `gpt-6-luna`.                                      |
 
 `OPENAI_MODEL` changes the drawing model only. Input policy separately uses
 `omni-moderation-latest` and the `gpt-6-luna` Decisions model configured in
@@ -122,11 +122,11 @@ content are rejected.
 
 The agent has three tools:
 
-| Tool | Responsibility |
-| --- | --- |
-| `querySvg` | Read the current validated SVG and a request-local revision. |
+| Tool          | Responsibility                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| `querySvg`    | Read the current validated SVG and a request-local revision.                                         |
 | `validateSvg` | Validate a complete proposal and retain it as the request-local candidate; return errors for repair. |
-| `webSearch` | Retrieve bounded Tavily text snippets when the model does not understand the subject. |
+| `webSearch`   | Retrieve bounded Tavily text snippets when the model does not understand the subject.                |
 
 The model's final structured response contains a message and filename. The
 server attaches the latest accepted SVG proposal and independently validates it
@@ -204,15 +204,15 @@ revoking all its public links and feedback permissions. Deleting the collection
 preserves conversation privacy. Deleting icons/collections removes retained
 reference source copies; already delivered browser copies cannot be recalled.
 
-| Collection bound | Limit |
-| --- | --- |
-| Collections per user | 5 |
-| Icons per collection | 200 |
-| Upload file size | 64 KB and the shared 48,000-character SVG limit |
-| Icons claimed per processing batch | 5 |
-| Attempts per processing stage | 3, with explicit retries after failure |
-| Vision analysis attempts per user | 200/day |
-| Retrieval searches per user | 120/hour |
+| Collection bound                   | Limit                                           |
+| ---------------------------------- | ----------------------------------------------- |
+| Collections per user               | 5                                               |
+| Icons per collection               | 200                                             |
+| Upload file size                   | 64 KB and the shared 48,000-character SVG limit |
+| Icons claimed per processing batch | 5                                               |
+| Attempts per processing stage      | 3, with explicit retries after failure          |
+| Vision analysis attempts per user  | 200/day                                         |
+| Retrieval searches per user        | 120/hour                                        |
 
 Analysis/search quotas use UTC windows, count failed attempts, and are enforced
 in database transactions across tabs and server instances. Embedding model changes
@@ -243,25 +243,40 @@ retention are configured separately. App logging and eval uploads are independen
 
 ## Project structure
 
-| Path | Responsibility |
-| --- | --- |
-| `app/` | Workspace, auth, gallery, collections and public pages; API Route Handlers; layout/styles/app icons. |
-| `components/` | Interactive workspace, collections, public view and shared UI. |
-| `lib/ai/` | Model configuration, input policy, drawing tools/streaming, tracking and feedback. |
-| `lib/conversations/` | Owned persistence, revisions, claims, checkpointing and client contracts. |
-| `lib/collections/` | Capability checks, ingestion, quotas, embeddings and hybrid retrieval. |
-| `lib/db/` and `drizzle/` | Database client/schema and committed migrations/metadata. |
-| `lib/svg/` | XML validation, progressive snapshots, safe rasterization and public-result reads. |
-| `lib/workspace/` | Shared generation contracts, limits, stream reader and UI state helpers. |
-| `evals/` | Dataset, evaluation runner, deterministic scorers and optional vision judge. |
-| `evaluations/` | Saved baseline artifacts; generated runs under `runs/` are ignored by Git. |
-| `tests/` | Mocked unit tests, disposable-database integration tests and browser fixtures. |
-| `proxy.ts` | Clerk session initialization; resource routes enforce their own authorization. |
+| Path                     | Responsibility                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `app/`                   | Workspace, auth, gallery, collections and public pages; API Route Handlers; layout/styles/app icons. |
+| `components/`            | Interactive workspace, collections, public view and shared UI.                                       |
+| `lib/ai/`                | Model configuration, input policy, drawing tools/streaming, tracking and feedback.                   |
+| `lib/conversations/`     | Owned persistence, revisions, claims, checkpointing and client contracts.                            |
+| `lib/collections/`       | Capability checks, ingestion, quotas, embeddings and hybrid retrieval.                               |
+| `lib/db/` and `drizzle/` | Database client/schema and committed migrations/metadata.                                            |
+| `lib/svg/`               | XML validation, progressive snapshots, safe rasterization and public-result reads.                   |
+| `lib/workspace/`         | Shared generation contracts, limits, stream reader and UI state helpers.                             |
+| `evals/`                 | Dataset, evaluation runner, deterministic scorers and optional vision judge.                         |
+| `evaluations/`           | Saved baseline artifacts; generated runs under `runs/` are ignored by Git.                           |
+| `tests/`                 | Mocked unit tests, disposable-database integration tests and browser fixtures.                       |
+| `proxy.ts`               | Clerk session initialization; resource routes enforce their own authorization.                       |
 
 `next.config.ts` keeps `ws` external on the server for the Neon driver's native
 optional-module loading. No transaction stays open during model generation.
 
 ## Evaluation and tests
+
+Formatting uses the pinned Prettier version and `.prettierrc.json`. Run
+`npm run format` to format supported files, or `npm run format:check` to check
+without editing. `npm run lint` checks ESLint rules and formatting;
+`npm run lint:fix` applies ESLint fixes followed by Prettier.
+VS Code workspace settings enable formatting on save with the recommended
+Prettier extension. Dependencies, build output and local secrets are ignored
+according to `.gitignore` and `.prettierignore`.
+
+`npm install` or `npm ci` installs the Husky pre-commit hook through the
+`prepare` script. Each commit checks staged files with Prettier and staged
+JavaScript/TypeScript files with ESLint, including partially staged files.
+Formatting failures, lint errors or lint warnings block the commit. Run
+`npm run lint:fix`, review and stage the fixes, then retry the commit.
+Use `npm run lint` to check the entire project.
 
 Run the standard checks:
 

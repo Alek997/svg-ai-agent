@@ -4,5 +4,10 @@ import { ConversationGallery } from "@/components/workspace/conversation-gallery
 
 export default async function Conversations() {
   await auth.protect();
-  return <main className="flex min-h-dvh flex-col bg-stone-50"><WorkspaceHeader /><ConversationGallery /></main>;
+  return (
+    <main className="flex min-h-dvh flex-col bg-stone-50">
+      <WorkspaceHeader />
+      <ConversationGallery />
+    </main>
+  );
 }

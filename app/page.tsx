@@ -9,7 +9,10 @@ export default async function Home() {
   return (
     <main className="flex h-dvh flex-col overflow-hidden">
       <WorkspaceHeader />
-      <SvgWorkspace ragEnabled={await ragEnabled(userId)} trackingEnabled={trackingEnabled()} />
+      <SvgWorkspace
+        ragEnabled={await ragEnabled(userId)}
+        trackingEnabled={trackingEnabled()}
+      />
     </main>
   );
 }

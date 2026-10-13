@@ -30,6 +30,11 @@ and private reference collections.
 ## Structure and conventions
 
 - Use npm and maintain `package-lock.json` when dependencies change.
+- Format new and changed files with the pinned project Prettier version and
+  `.prettierrc.json`. Run `npm run format` before finishing changes;
+  `npm run lint` checks both ESLint rules and Prettier formatting.
+- Keep the Husky pre-commit hook enabled. It checks staged formatting and ESLint
+  rules; fix failures and stage the corrections before committing.
 - Preserve Next.js App Router, strict TypeScript, Tailwind CSS, root-level `app/`
   and the `@/*` import alias.
 - Read relevant installed guides in `node_modules/next/dist/docs/` before writing

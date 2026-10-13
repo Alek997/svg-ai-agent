@@ -63,9 +63,11 @@ function mockModel(text: string) {
 test("SDK returns structured SVG output with server-owned system instructions", async () => {
   let turn = 0;
   const metadata = { message: output.message, filename: output.filename };
-  const model = new MockLanguageModelV4({ doStream: async () => turn++ === 0
-    ? toolStep("validateSvg", { svg: output.svg }, "validated")
-    : mockModel(JSON.stringify(metadata)).doStream({} as never),
+  const model = new MockLanguageModelV4({
+    doStream: async () =>
+      turn++ === 0
+        ? toolStep("validateSvg", { svg: output.svg }, "validated")
+        : mockModel(JSON.stringify(metadata)).doStream({} as never),
   });
   const progress: number[] = [];
   const signal = new AbortController().signal;
@@ -103,14 +105,31 @@ test("agent can generate structured output directly for an eval runner", async (
   const model = new MockLanguageModelV4({
     doGenerate: [
       {
-        content: [{ type: "tool-call", toolCallId: "validated", toolName: "validateSvg", input: JSON.stringify({ svg: output.svg }) }],
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "validated",
+            toolName: "validateSvg",
+            input: JSON.stringify({ svg: output.svg }),
+          },
+        ],
         finishReason: { unified: "tool-calls", raw: "tool_calls" },
-        usage: mockUsage, warnings: [],
+        usage: mockUsage,
+        warnings: [],
       },
       {
-        content: [{ type: "text", text: JSON.stringify({ message: output.message, filename: output.filename }) }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              message: output.message,
+              filename: output.filename,
+            }),
+          },
+        ],
         finishReason: { unified: "stop", raw: "stop" },
-        usage: mockUsage, warnings: [],
+        usage: mockUsage,
+        warnings: [],
       },
     ],
   });
@@ -121,7 +140,10 @@ test("agent can generate structured output directly for an eval runner", async (
   const originalMessages = [...input.messages];
   const agent = createSvgAgent(model, input.currentSvg);
   const result = await agent.generate({ messages: buildSvgMessages(input) });
-  assert.deepEqual(result.output, { message: output.message, filename: output.filename });
+  assert.deepEqual(result.output, {
+    message: output.message,
+    filename: output.filename,
+  });
   assert.equal(agent.getValidatedSvg(), output.svg);
   assert.equal(result.steps.length, 2);
   assert.equal(model.doGenerateCalls.length, 2);
@@ -141,15 +163,23 @@ test("agent bounds transient provider retries without logging raw errors", async
     statusCode: 503,
     responseHeaders: { "retry-after-ms": "1" },
   });
-  const model = new MockLanguageModelV4({ doStream: () => { throw error; } });
+  const model = new MockLanguageModelV4({
+    doStream: () => {
+      throw error;
+    },
+  });
   await assert.rejects(
-    () => generateSvg(
-      { messages: [{ role: "user", content: "Draw a circle" }] },
-      new AbortController().signal,
-      () => {},
-      model,
-    ),
-    (caught) => RetryError.isInstance(caught) && caught.reason === "maxRetriesExceeded" && caught.lastError === error,
+    () =>
+      generateSvg(
+        { messages: [{ role: "user", content: "Draw a circle" }] },
+        new AbortController().signal,
+        () => {},
+        model,
+      ),
+    (caught) =>
+      RetryError.isInstance(caught) &&
+      caught.reason === "maxRetriesExceeded" &&
+      caught.lastError === error,
   );
   assert.equal(model.doStreamCalls.length, 3);
   assert.equal(log.mock.callCount(), 0);
@@ -157,20 +187,34 @@ test("agent bounds transient provider retries without logging raw errors", async
 
 test("agent recovers from a transient failure before the stream opens", async () => {
   let call = 0;
-  const model = new MockLanguageModelV4({ doStream: async () => {
-    switch (call++) {
-      case 0: throw new APICallError({
-        message: "Temporary failure", url: "https://example.test/model",
-        requestBodyValues: {}, statusCode: 429,
-        responseHeaders: { "retry-after-ms": "1" },
-      });
-      case 1: return toolStep("validateSvg", { svg: output.svg }, "validated");
-      default: return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
-    }
-  } });
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      switch (call++) {
+        case 0:
+          throw new APICallError({
+            message: "Temporary failure",
+            url: "https://example.test/model",
+            requestBodyValues: {},
+            statusCode: 429,
+            responseHeaders: { "retry-after-ms": "1" },
+          });
+        case 1:
+          return toolStep("validateSvg", { svg: output.svg }, "validated");
+        default:
+          return mockModel(
+            JSON.stringify({
+              message: output.message,
+              filename: output.filename,
+            }),
+          ).doStream({} as never);
+      }
+    },
+  });
   const result = await generateSvg(
     { messages: [{ role: "user", content: "Draw a circle" }] },
-    new AbortController().signal, () => {}, model,
+    new AbortController().signal,
+    () => {},
+    model,
   );
   assert.deepEqual(result.output, output);
   assert.equal(model.doStreamCalls.length, 3);
@@ -179,48 +223,81 @@ test("agent recovers from a transient failure before the stream opens", async ()
 
 test("agent does not retry permanent provider errors", async () => {
   const error = new APICallError({
-    message: "Invalid credentials", url: "https://example.test/model",
-    requestBodyValues: {}, statusCode: 401,
+    message: "Invalid credentials",
+    url: "https://example.test/model",
+    requestBodyValues: {},
+    statusCode: 401,
   });
-  const model = new MockLanguageModelV4({ doStream: () => { throw error; } });
-  await assert.rejects(() => generateSvg(
-    { messages: [{ role: "user", content: "Draw a circle" }] },
-    new AbortController().signal, () => {}, model,
-  ), (caught) => caught === error);
+  const model = new MockLanguageModelV4({
+    doStream: () => {
+      throw error;
+    },
+  });
+  await assert.rejects(
+    () =>
+      generateSvg(
+        { messages: [{ role: "user", content: "Draw a circle" }] },
+        new AbortController().signal,
+        () => {},
+        model,
+      ),
+    (caught) => caught === error,
+  );
   assert.equal(model.doStreamCalls.length, 1);
 });
 
 test("cancelling during retry backoff prevents further provider calls", async () => {
   const controller = new AbortController();
-  const model = new MockLanguageModelV4({ doStream: () => {
-    setTimeout(() => controller.abort(), 10);
-    throw new APICallError({
-      message: "Temporary failure", url: "https://example.test/model",
-      requestBodyValues: {}, statusCode: 503,
-    });
-  } });
-  await assert.rejects(() => generateSvg(
-    { messages: [{ role: "user", content: "Draw a circle" }] },
-    controller.signal, () => {}, model,
-  ));
+  const model = new MockLanguageModelV4({
+    doStream: () => {
+      setTimeout(() => controller.abort(), 10);
+      throw new APICallError({
+        message: "Temporary failure",
+        url: "https://example.test/model",
+        requestBodyValues: {},
+        statusCode: 503,
+      });
+    },
+  });
+  await assert.rejects(() =>
+    generateSvg(
+      { messages: [{ role: "user", content: "Draw a circle" }] },
+      controller.signal,
+      () => {},
+      model,
+    ),
+  );
   assert.equal(model.doStreamCalls.length, 1);
 });
 
 test("a failure inside an open stream is not automatically replayed", async () => {
-  const model = new MockLanguageModelV4({ doStream: {
-    stream: new ReadableStream({ start(controller) {
-      controller.enqueue({ type: "stream-start", warnings: [] });
-      controller.enqueue({ type: "error", error: new APICallError({
-        message: "Stream interrupted", url: "https://example.test/model",
-        requestBodyValues: {}, statusCode: 503,
-      }) });
-      controller.close();
-    } }),
-  } });
-  await assert.rejects(() => generateSvg(
-    { messages: [{ role: "user", content: "Draw a circle" }] },
-    new AbortController().signal, () => {}, model,
-  ));
+  const model = new MockLanguageModelV4({
+    doStream: {
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: "stream-start", warnings: [] });
+          controller.enqueue({
+            type: "error",
+            error: new APICallError({
+              message: "Stream interrupted",
+              url: "https://example.test/model",
+              requestBodyValues: {},
+              statusCode: 503,
+            }),
+          });
+          controller.close();
+        },
+      }),
+    },
+  });
+  await assert.rejects(() =>
+    generateSvg(
+      { messages: [{ role: "user", content: "Draw a circle" }] },
+      new AbortController().signal,
+      () => {},
+      model,
+    ),
+  );
   assert.equal(model.doStreamCalls.length, 1);
 });
 
@@ -248,11 +325,24 @@ function toolStep(name: string, args: unknown, id: string) {
         controller.enqueue({ type: "stream-start", warnings: [] });
         controller.enqueue({ type: "tool-input-start", id, toolName: name });
         for (let offset = 0; offset < json.length; offset += 20) {
-          controller.enqueue({ type: "tool-input-delta", id, delta: json.slice(offset, offset + 20) });
+          controller.enqueue({
+            type: "tool-input-delta",
+            id,
+            delta: json.slice(offset, offset + 20),
+          });
         }
         controller.enqueue({ type: "tool-input-end", id });
-        controller.enqueue({ type: "tool-call", toolCallId: id, toolName: name, input: json });
-        controller.enqueue({ type: "finish", finishReason: { unified: "tool-calls", raw: "tool_calls" }, usage: mockUsage });
+        controller.enqueue({
+          type: "tool-call",
+          toolCallId: id,
+          toolName: name,
+          input: json,
+        });
+        controller.enqueue({
+          type: "finish",
+          finishReason: { unified: "tool-calls", raw: "tool_calls" },
+          usage: mockUsage,
+        });
         controller.close();
       },
     }),
@@ -261,40 +351,108 @@ function toolStep(name: string, args: unknown, id: string) {
 
 test("agent searches, uses returned context, validates SVG and streams clickable source records", async () => {
   let turn = 0;
-  const source = { title: "New character", url: "https://example.com/reference", content: "A blue circle character with a red hat." };
-  const search = createWebSearch({ apiKey: "test-key", fetcher: async () => Response.json({ results: [source] }) });
-  const model = new MockLanguageModelV4({ doStream: async () => {
-    switch (turn++) {
-      case 0: return toolStep("webSearch", { query: "new character appearance" }, "search");
-      case 1: return toolStep("validateSvg", { svg: output.svg }, "validate");
-      default: return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
-    }
-  } });
+  const source = {
+    title: "New character",
+    url: "https://example.com/reference",
+    content: "A blue circle character with a red hat.",
+  };
+  const search = createWebSearch({
+    apiKey: "test-key",
+    fetcher: async () => Response.json({ results: [source] }),
+  });
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      switch (turn++) {
+        case 0:
+          return toolStep(
+            "webSearch",
+            { query: "new character appearance" },
+            "search",
+          );
+        case 1:
+          return toolStep("validateSvg", { svg: output.svg }, "validate");
+        default:
+          return mockModel(
+            JSON.stringify({
+              message: output.message,
+              filename: output.filename,
+            }),
+          ).doStream({} as never);
+      }
+    },
+  });
   const events: import("../lib/workspace/contracts").GenerationEvent[] = [];
   const result = await generateSvg(
-    { messages: [{ role: "user", content: "Draw an unfamiliar character called Zorbimble" }] },
-    new AbortController().signal, () => {}, model, event => events.push(event), search,
+    {
+      messages: [
+        {
+          role: "user",
+          content: "Draw an unfamiliar character called Zorbimble",
+        },
+      ],
+    },
+    new AbortController().signal,
+    () => {},
+    model,
+    (event) => events.push(event),
+    search,
   );
   assert.deepEqual(result.output, output);
   assert.match(JSON.stringify(model.doStreamCalls[1].prompt), /red hat/);
-  assert.ok(events.some(event => event.type === "activity" && event.action === "webSearch"));
-  const traces = events.flatMap(event => event.type === "tool" && event.call.name === "webSearch" ? [event.call] : []);
-  assert.deepEqual(traces.map(call => call.status), ["pending", "running", "completed"]);
-  assert.deepEqual(traces.at(-1)?.output, { ok: true, query: "new character appearance", results: [source] });
+  assert.ok(
+    events.some(
+      (event) => event.type === "activity" && event.action === "webSearch",
+    ),
+  );
+  const traces = events.flatMap((event) =>
+    event.type === "tool" && event.call.name === "webSearch"
+      ? [event.call]
+      : [],
+  );
+  assert.deepEqual(
+    traces.map((call) => call.status),
+    ["pending", "running", "completed"],
+  );
+  assert.deepEqual(traces.at(-1)?.output, {
+    ok: true,
+    query: "new character appearance",
+    results: [source],
+  });
   assert.doesNotMatch(JSON.stringify(events), /test-key/);
 });
 
 test("agent removes search after two attempts while retaining validation tools", async () => {
   let turn = 0;
-  const search = createWebSearch({ apiKey: "test-key", fetcher: async () => Response.json({ results: [] }) });
-  const model = new MockLanguageModelV4({ doStream: async () => {
-    const current = turn++;
-    if (current < 2) return toolStep("webSearch", { query: "unknown reference" }, `search-${current}`);
-    if (current === 2) return toolStep("validateSvg", { svg: output.svg }, "validate");
-    return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
-  } });
-  await generateSvg({ messages: [{ role: "user", content: "Draw unknown reference" }] }, new AbortController().signal, () => {}, model, undefined, search);
-  const names = (index: number) => model.doStreamCalls[index].tools?.map(tool => tool.name);
+  const search = createWebSearch({
+    apiKey: "test-key",
+    fetcher: async () => Response.json({ results: [] }),
+  });
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      const current = turn++;
+      if (current < 2)
+        return toolStep(
+          "webSearch",
+          { query: "unknown reference" },
+          `search-${current}`,
+        );
+      if (current === 2)
+        return toolStep("validateSvg", { svg: output.svg }, "validate");
+      return mockModel(
+        JSON.stringify({ message: output.message, filename: output.filename }),
+      ).doStream({} as never);
+    },
+  });
+  await generateSvg(
+    { messages: [{ role: "user", content: "Draw unknown reference" }] },
+    new AbortController().signal,
+    () => {},
+    model,
+    undefined,
+    search,
+  );
+  const names = (index: number) =>
+    model.doStreamCalls[index].tools?.map((tool) => tool.name);
   assert.ok(names(0)?.includes("webSearch"));
   assert.ok(names(1)?.includes("webSearch"));
   assert.deepEqual(names(2), ["querySvg", "validateSvg"]);
@@ -305,18 +463,36 @@ test("agent queries current artwork, receives validation failure, repairs and co
   const model = new MockLanguageModelV4({
     doStream: async () => {
       switch (call++) {
-        case 0: return toolStep("querySvg", {}, "query");
-        case 1: return toolStep("validateSvg", { svg: output.svg.replace('<circle', '<script/><circle') }, "invalid");
-        case 2: return toolStep("validateSvg", { svg: output.svg }, "valid");
-        default: return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
+        case 0:
+          return toolStep("querySvg", {}, "query");
+        case 1:
+          return toolStep(
+            "validateSvg",
+            { svg: output.svg.replace("<circle", "<script/><circle") },
+            "invalid",
+          );
+        case 2:
+          return toolStep("validateSvg", { svg: output.svg }, "valid");
+        default:
+          return mockModel(
+            JSON.stringify({
+              message: output.message,
+              filename: output.filename,
+            }),
+          ).doStream({} as never);
       }
     },
   });
   const events: import("../lib/workspace/contracts").GenerationEvent[] = [];
   const result = await generateSvg(
-    { messages: [{ role: "user", content: "Make the circle blue" }], currentSvg: output.svg },
+    {
+      messages: [{ role: "user", content: "Make the circle blue" }],
+      currentSvg: output.svg,
+    },
     new AbortController().signal,
-    () => {}, model, (event) => events.push(event),
+    () => {},
+    model,
+    (event) => events.push(event),
   );
   assert.deepEqual(result.output, output);
   assert.equal(model.doStreamCalls.length, 4);
@@ -326,65 +502,137 @@ test("agent queries current artwork, receives validation failure, repairs and co
   assert.match(JSON.stringify(model.doStreamCalls[2].prompt), /"valid":false/);
   assert.match(JSON.stringify(model.doStreamCalls[3].prompt), /"valid":true/);
   assert.equal(result.usage.inputTokens, 400);
-  assert.deepEqual(events.flatMap(e => e.type === "activity" && e.action === "working" ? [e.step] : []), [1, 2, 3, 4]);
-  const steps = events.flatMap(e => e.type === "step" ? [e.detail] : []);
-  assert.deepEqual(steps.filter(detail => detail.status === "running").map(detail => detail.step), [1, 2, 3, 4]);
-  assert.deepEqual(steps.filter(detail => detail.status === "completed").map(detail => detail.step), [1, 2, 3, 4]);
+  assert.deepEqual(
+    events.flatMap((e) =>
+      e.type === "activity" && e.action === "working" ? [e.step] : [],
+    ),
+    [1, 2, 3, 4],
+  );
+  const steps = events.flatMap((e) => (e.type === "step" ? [e.detail] : []));
+  assert.deepEqual(
+    steps
+      .filter((detail) => detail.status === "running")
+      .map((detail) => detail.step),
+    [1, 2, 3, 4],
+  );
+  assert.deepEqual(
+    steps
+      .filter((detail) => detail.status === "completed")
+      .map((detail) => detail.step),
+    [1, 2, 3, 4],
+  );
   assert.equal(steps.at(-1)?.description, output.message);
-  assert.ok(events.some(e => e.type === "preview"));
-  const traces = events.flatMap(e => e.type === "tool" ? [e.call] : []);
-  assert.deepEqual(traces.filter(call => call.status === "completed").map(call => call.name), ["querySvg", "validateSvg", "validateSvg"]);
-  assert.deepEqual(traces.find(call => call.id === "query" && call.status === "completed")?.output, { source: output.svg, version: 0 });
-  const validationInput = traces.find(call => call.id === "valid" && call.status === "running")?.input;
+  assert.ok(events.some((e) => e.type === "preview"));
+  const traces = events.flatMap((e) => (e.type === "tool" ? [e.call] : []));
+  assert.deepEqual(
+    traces
+      .filter((call) => call.status === "completed")
+      .map((call) => call.name),
+    ["querySvg", "validateSvg", "validateSvg"],
+  );
+  assert.deepEqual(
+    traces.find((call) => call.id === "query" && call.status === "completed")
+      ?.output,
+    { source: output.svg, version: 0 },
+  );
+  const validationInput = traces.find(
+    (call) => call.id === "valid" && call.status === "running",
+  )?.input;
   assert.ok(validationInput && "svg" in validationInput);
   assert.equal(validationInput.svg, output.svg);
-  const rejected = traces.find(call => call.id === "invalid" && call.status === "completed")?.output;
+  const rejected = traces.find(
+    (call) => call.id === "invalid" && call.status === "completed",
+  )?.output;
   assert.ok(rejected && "valid" in rejected && !rejected.valid);
   assert.match(rejected.error, /script/);
-  for (const event of events) if (event.type === "preview") assert.doesNotMatch(event.svg.source, /script/);
+  for (const event of events)
+    if (event.type === "preview")
+      assert.doesNotMatch(event.svg.source, /script/);
 });
 
 test("tool-only loop stops after six steps without a successful final result", async () => {
   let call = 0;
-  const model = new MockLanguageModelV4({ doStream: async () => toolStep("querySvg", {}, `query-${call++}`) });
-  await assert.rejects(() => generateSvg(
-    { messages: [{ role: "user", content: "Draw something" }] },
-    new AbortController().signal, () => {}, model,
-  ));
+  const model = new MockLanguageModelV4({
+    doStream: async () => toolStep("querySvg", {}, `query-${call++}`),
+  });
+  await assert.rejects(() =>
+    generateSvg(
+      { messages: [{ role: "user", content: "Draw something" }] },
+      new AbortController().signal,
+      () => {},
+      model,
+    ),
+  );
   assert.equal(model.doStreamCalls.length, 6);
 });
 
 test("streams a safe preview during validation input, then finalizes without replaying it", async () => {
   const { setTimeout: delay } = await import("node:timers/promises");
-  const revised = output.svg.replace('</svg>', '<rect x="5" y="5" width="10" height="10"/></svg>');
+  const revised = output.svg.replace(
+    "</svg>",
+    '<rect x="5" y="5" width="10" height="10"/></svg>',
+  );
   const json = JSON.stringify({ svg: revised });
-  const split = json.indexOf('<rect');
+  const split = json.indexOf("<rect");
   let finished = false;
   let turn = 0;
-  const model = new MockLanguageModelV4({ doStream: async () => {
-    if (turn++ > 0) return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
-    return { stream: new ReadableStream({
-      async start(controller) {
-        controller.enqueue({ type: "stream-start", warnings: [] });
-        controller.enqueue({ type: "tool-input-start", id: "validate", toolName: "validateSvg" });
-        controller.enqueue({ type: "tool-input-delta", id: "validate", delta: json.slice(0, split) });
-        await delay(300);
-        finished = true;
-        controller.enqueue({ type: "tool-input-delta", id: "validate", delta: json.slice(split) });
-        controller.enqueue({ type: "tool-input-end", id: "validate" });
-        controller.enqueue({ type: "tool-call", toolCallId: "validate", toolName: "validateSvg", input: json });
-        controller.enqueue({ type: "finish", finishReason: { unified: "tool-calls", raw: "tool_calls" }, usage: mockUsage });
-        controller.close();
-      },
-    }) };
-  } });
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      if (turn++ > 0)
+        return mockModel(
+          JSON.stringify({
+            message: output.message,
+            filename: output.filename,
+          }),
+        ).doStream({} as never);
+      return {
+        stream: new ReadableStream({
+          async start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({
+              type: "tool-input-start",
+              id: "validate",
+              toolName: "validateSvg",
+            });
+            controller.enqueue({
+              type: "tool-input-delta",
+              id: "validate",
+              delta: json.slice(0, split),
+            });
+            await delay(300);
+            finished = true;
+            controller.enqueue({
+              type: "tool-input-delta",
+              id: "validate",
+              delta: json.slice(split),
+            });
+            controller.enqueue({ type: "tool-input-end", id: "validate" });
+            controller.enqueue({
+              type: "tool-call",
+              toolCallId: "validate",
+              toolName: "validateSvg",
+              input: json,
+            });
+            controller.enqueue({
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: "tool_calls" },
+              usage: mockUsage,
+            });
+            controller.close();
+          },
+        }),
+      };
+    },
+  });
   const early: string[] = [];
   let step = 0;
   const previewSteps: number[] = [];
   const result = await generateSvg(
     { messages: [{ role: "user", content: "Draw a circle then a rectangle" }] },
-    new AbortController().signal, () => {}, model,
-    event => {
+    new AbortController().signal,
+    () => {},
+    model,
+    (event) => {
       if (event.type === "step") step = event.detail.step;
       if (event.type === "preview") {
         previewSteps.push(step);
@@ -392,30 +640,65 @@ test("streams a safe preview during validation input, then finalizes without rep
       }
     },
   );
-  assert.ok(early.length > 0, "A preview must arrive while the provider is still streaming tool input");
+  assert.ok(
+    early.length > 0,
+    "A preview must arrive while the provider is still streaming tool input",
+  );
   assert.match(early[0], /<circle/);
   assert.doesNotMatch(early[0], /<rect/);
-  assert.ok(previewSteps.every(step => step === 1), "The final metadata response must not replay SVG previews");
-  assert.deepEqual(result.output, { message: output.message, filename: output.filename, svg: revised });
+  assert.ok(
+    previewSteps.every((step) => step === 1),
+    "The final metadata response must not replay SVG previews",
+  );
+  assert.deepEqual(result.output, {
+    message: output.message,
+    filename: output.filename,
+    svg: revised,
+  });
 });
 
 test("final metadata cannot silently reuse previous artwork without validation", async () => {
-  await assert.rejects(() => generateSvg(
-    { messages: [{ role: "user", content: "Make it blue" }], currentSvg: output.svg },
-    new AbortController().signal, () => {},
-    mockModel(JSON.stringify({ message: output.message, filename: output.filename })),
-  ), /validated SVG proposal/);
+  await assert.rejects(
+    () =>
+      generateSvg(
+        {
+          messages: [{ role: "user", content: "Make it blue" }],
+          currentSvg: output.svg,
+        },
+        new AbortController().signal,
+        () => {},
+        mockModel(
+          JSON.stringify({
+            message: output.message,
+            filename: output.filename,
+          }),
+        ),
+      ),
+    /validated SVG proposal/,
+  );
 });
 
 test("a failed latest proposal cannot finalize an older accepted SVG", async () => {
   let turn = 0;
-  const model = new MockLanguageModelV4({ doStream: async () => {
-    if (turn++ === 0) return toolStep("validateSvg", { svg: output.svg }, "valid");
-    if (turn === 2) return toolStep("validateSvg", { svg: "<svg/>" }, "invalid");
-    return mockModel(JSON.stringify({ message: output.message, filename: output.filename })).doStream({} as never);
-  } });
-  await assert.rejects(() => generateSvg(
-    { messages: [{ role: "user", content: "Draw a circle" }] },
-    new AbortController().signal, () => {}, model,
-  ), /validated SVG proposal/);
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      if (turn++ === 0)
+        return toolStep("validateSvg", { svg: output.svg }, "valid");
+      if (turn === 2)
+        return toolStep("validateSvg", { svg: "<svg/>" }, "invalid");
+      return mockModel(
+        JSON.stringify({ message: output.message, filename: output.filename }),
+      ).doStream({} as never);
+    },
+  });
+  await assert.rejects(
+    () =>
+      generateSvg(
+        { messages: [{ role: "user", content: "Draw a circle" }] },
+        new AbortController().signal,
+        () => {},
+        model,
+      ),
+    /validated SVG proposal/,
+  );
 });

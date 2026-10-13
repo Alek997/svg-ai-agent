@@ -22,26 +22,51 @@ export function ChatMessage({ message }: { message: Message }) {
         <p className="mb-1.5 text-[11px] font-medium text-stone-500">
           {isAssistant ? "SVG Studio" : "You"}
         </p>
-        {isAssistant && !!(message.flow?.length || message.tools?.length || message.steps?.length) && <RunDetails message={message} />}
+        {isAssistant &&
+          !!(
+            message.flow?.length ||
+            message.tools?.length ||
+            message.steps?.length
+          ) && <RunDetails message={message} />}
         <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-stone-600">
           {message.content}
         </p>
         {isAssistant && message.usage && (
           <div className="mt-2 text-[11px] leading-5 text-stone-400">
             <p title="Token usage for this request, including conversation history and current artwork. Cached input is included in the input count.">
-              {message.usage.totalTokens?.toLocaleString("en-US") ?? "Unknown"} tokens
+              {message.usage.totalTokens?.toLocaleString("en-US") ?? "Unknown"}{" "}
+              tokens
               {" · "}
-              {message.usage.inputTokens?.toLocaleString("en-US") ?? "Unknown"} input
+              {message.usage.inputTokens?.toLocaleString("en-US") ??
+                "Unknown"}{" "}
+              input
               {" · "}
-              {message.usage.outputTokens?.toLocaleString("en-US") ?? "Unknown"} output tokens
-              {message.usage.cachedInputTokens !== null && message.usage.cachedInputTokens > 0 &&
+              {message.usage.outputTokens?.toLocaleString("en-US") ??
+                "Unknown"}{" "}
+              output tokens
+              {message.usage.cachedInputTokens !== null &&
+                message.usage.cachedInputTokens > 0 &&
                 ` · ${message.usage.cachedInputTokens.toLocaleString("en-US")} input cached`}
             </p>
           </div>
         )}
-        {isAssistant && message.runError && <p className="mt-2 text-xs text-red-700">{message.runError}</p>}
-        {isAssistant && message.feedbackSaved ? <p className="mt-3 text-xs text-stone-500">Thanks for your feedback.</p>
-          : isAssistant && message.runStatus === "completed" && message.feedbackToken && <GenerationFeedback token={message.feedbackToken} expiresAt={message.feedbackExpiresAt} />}
+        {isAssistant && message.runError && (
+          <p className="mt-2 text-xs text-red-700">{message.runError}</p>
+        )}
+        {isAssistant && message.feedbackSaved ? (
+          <p className="mt-3 text-xs text-stone-500">
+            Thanks for your feedback.
+          </p>
+        ) : (
+          isAssistant &&
+          message.runStatus === "completed" &&
+          message.feedbackToken && (
+            <GenerationFeedback
+              token={message.feedbackToken}
+              expiresAt={message.feedbackExpiresAt}
+            />
+          )
+        )}
       </div>
     </article>
   );

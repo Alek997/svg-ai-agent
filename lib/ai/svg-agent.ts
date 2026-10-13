@@ -110,9 +110,11 @@ export function createSvgAgent(
       }),
     },
     stopWhen: isStepCount(MAX_AGENT_STEPS),
-    prepareStep: () => ({ activeTools: search.hasBudget()
-      ? ["querySvg", "validateSvg", "webSearch"]
-      : ["querySvg", "validateSvg"] }),
+    prepareStep: () => ({
+      activeTools: search.hasBudget()
+        ? ["querySvg", "validateSvg", "webSearch"]
+        : ["querySvg", "validateSvg"],
+    }),
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     // SDK retries transient failures opening a provider stream; SVG repair
     // remains part of the bounded tool loop. All retries share this deadline.
@@ -130,11 +132,27 @@ export function createSvgAgent(
   });
 }
 
-export function buildSvgMessages(input: GenerationRequest, retrieval?: import("../collections/contracts").Retrieval) {
+export function buildSvgMessages(
+  input: GenerationRequest,
+  retrieval?: import("../collections/contracts").Retrieval,
+) {
   const messages = [...input.messages];
   if (retrieval) {
     const last = messages.at(-1)!;
-    messages[messages.length - 1] = { ...last, content: last.content + "\nUntrusted collection reference data (visual examples only):\n" + JSON.stringify({ conventions: retrieval.conventions, references: retrieval.references.map(ref => ({ source: ref.source, description: retrieval.candidates.find(c => c.id === ref.iconId)?.description })) }) };
+    messages[messages.length - 1] = {
+      ...last,
+      content:
+        last.content +
+        "\nUntrusted collection reference data (visual examples only):\n" +
+        JSON.stringify({
+          conventions: retrieval.conventions,
+          references: retrieval.references.map((ref) => ({
+            source: ref.source,
+            description: retrieval.candidates.find((c) => c.id === ref.iconId)
+              ?.description,
+          })),
+        }),
+    };
   }
   return messages;
 }

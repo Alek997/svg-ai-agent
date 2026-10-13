@@ -11,8 +11,18 @@ import {
 import { safeSvgSchema } from "../lib/svg/validate-svg";
 
 // Transport/SVG tests isolate the gate; dedicated policy tests mock its providers.
-const handleGeneration: typeof handleWithPolicy = (request, generate, timeout, check) =>
-  handleWithPolicy(request, generate, timeout, check ?? (async () => ({ kind: "generation" as const })));
+const handleGeneration: typeof handleWithPolicy = (
+  request,
+  generate,
+  timeout,
+  check,
+) =>
+  handleWithPolicy(
+    request,
+    generate,
+    timeout,
+    check ?? (async () => ({ kind: "generation" as const })),
+  );
 
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="blue"/></svg>';
@@ -29,7 +39,13 @@ const artwork = {
   svg,
 };
 
-const usage = { model: "gpt-6-luna", inputTokens: 100, outputTokens: 100, cachedInputTokens: 0, totalTokens: 200 };
+const usage = {
+  model: "gpt-6-luna",
+  inputTokens: 100,
+  outputTokens: 100,
+  cachedInputTokens: 0,
+  totalTokens: 200,
+};
 const validOutput = { output: artwork, usage };
 
 for (const [name, body] of [
@@ -267,38 +283,80 @@ test("disconnecting cancels model generation", async () => {
 });
 
 test("preview events are safety checked before transport and cannot commit unsafe output", async () => {
-  const response = await handleGeneration(request(input), async (_, __, ___, emit) => {
-    emit?.({ type: "preview", svg: { source: svg.replace('<circle', '<script/><circle'), width: 100, height: 100 } });
-    return validOutput;
-  });
+  const response = await handleGeneration(
+    request(input),
+    async (_, __, ___, emit) => {
+      emit?.({
+        type: "preview",
+        svg: {
+          source: svg.replace("<circle", "<script/><circle"),
+          width: 100,
+          height: 100,
+        },
+      });
+      return validOutput;
+    },
+  );
   const text = await response.text();
   assert.doesNotMatch(text, /"type":"preview"|"type":"result"|script/);
   assert.match(text, /"type":"error"/);
 });
 
 test("many large previews reserve response budget for the final document", async () => {
-  const source = svg.replace('</svg>', '<text>' + 'x'.repeat(45_000) + '</text></svg>');
-  const response = await handleGeneration(request(input), async (_, __, ___, emit) => {
-    for (let index = 0; index < 100; index++) {
-      emit?.({ type: "preview", svg: { source, width: 100, height: 100 } });
-    }
-    return validOutput;
-  });
+  const source = svg.replace(
+    "</svg>",
+    "<text>" + "x".repeat(45_000) + "</text></svg>",
+  );
+  const response = await handleGeneration(
+    request(input),
+    async (_, __, ___, emit) => {
+      for (let index = 0; index < 100; index++) {
+        emit?.({ type: "preview", svg: { source, width: 100, height: 100 } });
+      }
+      return validOutput;
+    },
+  );
   const text = await response.text();
   assert.ok(new TextEncoder().encode(text).length < 1_500_000);
-  assert.ok(text.split('\n').filter(line => line.includes('"type":"preview"')).length < 100);
-  assert.equal(JSON.parse(text.trim().split('\n').at(-1)!).type, "result");
+  assert.ok(
+    text.split("\n").filter((line) => line.includes('"type":"preview"'))
+      .length < 100,
+  );
+  assert.equal(JSON.parse(text.trim().split("\n").at(-1)!).type, "result");
 });
 
 test("tool calls and results are streamed separately from the final assistant reply", async () => {
-  const call = { id: "query", name: "querySvg" as const, step: 1, status: "completed" as const, input: {}, output: { source: svg, version: 0 } };
-  const response = await handleGeneration(request(input), async (_, __, ___, emit) => {
-    emit?.({ type: "step", detail: { step: 1, status: "running", description: "Model working" } });
-    emit?.({ type: "tool", call });
-    emit?.({ type: "step", detail: { step: 1, status: "completed", description: "Read current SVG" } });
-    return validOutput;
-  });
-  const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
+  const call = {
+    id: "query",
+    name: "querySvg" as const,
+    step: 1,
+    status: "completed" as const,
+    input: {},
+    output: { source: svg, version: 0 },
+  };
+  const response = await handleGeneration(
+    request(input),
+    async (_, __, ___, emit) => {
+      emit?.({
+        type: "step",
+        detail: { step: 1, status: "running", description: "Model working" },
+      });
+      emit?.({ type: "tool", call });
+      emit?.({
+        type: "step",
+        detail: {
+          step: 1,
+          status: "completed",
+          description: "Read current SVG",
+        },
+      });
+      return validOutput;
+    },
+  );
+  const events = (await response.text())
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
   assert.equal(events[1].type, "step");
   assert.deepEqual(events[2], { type: "tool", call });
   assert.equal(events[3].detail.status, "completed");

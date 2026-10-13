@@ -11,7 +11,10 @@ export function createSvgPreview(source: string) {
   let checkpoint = "";
   let failed = false;
   let elements = 0;
-  const fail = () => { failed = true; throw new Error("Invalid draft"); };
+  const fail = () => {
+    failed = true;
+    throw new Error("Invalid draft");
+  };
   parser.on("error", fail);
   parser.on("doctype", fail);
   parser.on("xmldecl", fail);
@@ -22,8 +25,12 @@ export function createSvgPreview(source: string) {
   });
   parser.on("closetag", () => {
     stack.pop();
-    checkpoint = source.slice(0, parser.position) +
-      [...stack].reverse().map((name) => `</${name}>`).join("");
+    checkpoint =
+      source.slice(0, parser.position) +
+      [...stack]
+        .reverse()
+        .map((name) => `</${name}>`)
+        .join("");
   });
   try {
     // Do not call close(): end-of-document errors are expected during streaming.
@@ -43,14 +50,20 @@ export function readStreamedSvg(json: string, field = "svg"): string | null {
     if (json[index++] !== '"') continue;
     const start = index;
     while (index < json.length) {
-      if (json[index] === "\\") { index += 2; continue; }
+      if (json[index] === "\\") {
+        index += 2;
+        continue;
+      }
       if (json[index] === '"') break;
       index++;
     }
     if (index >= json.length) return null;
     let value: string;
-    try { value = JSON.parse('"' + json.slice(start, index) + '"'); }
-    catch { return null; }
+    try {
+      value = JSON.parse('"' + json.slice(start, index) + '"');
+    } catch {
+      return null;
+    }
     index++;
     if (value !== field) continue;
     while (/\s/.test(json[index] ?? "") && index < json.length) index++;
@@ -68,8 +81,11 @@ export function readStreamedSvg(json: string, field = "svg"): string | null {
       } else index++;
       end = index;
     }
-    try { return JSON.parse('"' + json.slice(valueStart, end) + '"'); }
-    catch { return null; }
+    try {
+      return JSON.parse('"' + json.slice(valueStart, end) + '"');
+    } catch {
+      return null;
+    }
   }
   return null;
 }

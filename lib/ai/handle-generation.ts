@@ -12,7 +12,11 @@ import {
 } from "../workspace/contracts";
 import { safeSvgSchema } from "../svg/validate-svg";
 import { GENERATION_TIMEOUT_MS } from "../workspace/generation-limits";
-import { checkGenerationPolicy, InputPolicyError, type PolicyOutcome } from "./input-policy";
+import {
+  checkGenerationPolicy,
+  InputPolicyError,
+  type PolicyOutcome,
+} from "./input-policy";
 
 const resultSchema = z
   .object({
@@ -102,7 +106,10 @@ export async function handleGeneration(
   request: Request,
   generate: GenerateSvg,
   timeoutMs = GENERATION_TIMEOUT_MS,
-  checkPolicy: (input: GenerationRequest, signal: AbortSignal) => Promise<PolicyOutcome> = checkGenerationPolicy,
+  checkPolicy: (
+    input: GenerationRequest,
+    signal: AbortSignal,
+  ) => Promise<PolicyOutcome> = checkGenerationPolicy,
   observe?: (input: GenerationRequest) => GenerationObserver | undefined,
 ) {
   let input: GenerationRequest;
@@ -129,7 +136,11 @@ export async function handleGeneration(
     const outcome = await checkPolicy(input, signal);
     signal.throwIfAborted();
     if (outcome.kind === "reply") {
-      const event = generationEventSchema.parse({ type: "reply", reason: outcome.reason, message: outcome.message });
+      const event = generationEventSchema.parse({
+        type: "reply",
+        reason: outcome.reason,
+        message: outcome.message,
+      });
       observer?.event(event);
       observer?.finish();
       clearTimeout(timeout);
@@ -147,14 +158,26 @@ export async function handleGeneration(
   } catch (error) {
     clearTimeout(timeout);
     cancellation.abort();
-    observer?.event({ type: "error", message: error instanceof InputPolicyError ? error.message : "Input policy check unavailable." });
-    observer?.finish();
-    return Response.json({
-      error: error instanceof InputPolicyError ? error.message : "Unable to check this request right now. Please try again shortly.",
-    }, {
-      status: error instanceof InputPolicyError ? error.status : 503,
-      headers: { "Cache-Control": "no-store" },
+    observer?.event({
+      type: "error",
+      message:
+        error instanceof InputPolicyError
+          ? error.message
+          : "Input policy check unavailable.",
     });
+    observer?.finish();
+    return Response.json(
+      {
+        error:
+          error instanceof InputPolicyError
+            ? error.message
+            : "Unable to check this request right now. Please try again shortly.",
+      },
+      {
+        status: error instanceof InputPolicyError ? error.status : 503,
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
   }
   const encoder = new TextEncoder();
   let closed = false;
@@ -166,7 +189,11 @@ export async function handleGeneration(
         if (!closed && !request.signal.aborted) {
           const chunk = encoder.encode(`${JSON.stringify(event)}\n`);
           // Snapshots are expendable; reserve room for the final SVG and errors.
-          if (event.type === "preview" && responseBytes + chunk.byteLength > MAX_RESPONSE_BYTES - 320_000) return;
+          if (
+            event.type === "preview" &&
+            responseBytes + chunk.byteLength > MAX_RESPONSE_BYTES - 320_000
+          )
+            return;
           if (responseBytes + chunk.byteLength > MAX_RESPONSE_BYTES) {
             throw new Error("Response limit exceeded");
           }
@@ -176,12 +203,24 @@ export async function handleGeneration(
       };
       try {
         send({ type: "progress", characters: 0 });
-        const raw = await generate(input, signal, (characters) =>
-          send({ type: "progress", characters }),
+        const raw = await generate(
+          input,
+          signal,
+          (characters) => send({ type: "progress", characters }),
           (event) => {
             if (event.type === "preview") {
-              send({ type: "preview", svg: safeSvgSchema.parse(event.svg.source) });
-            } else if (event.type === "retrieval" || event.type === "activity" || event.type === "tool" || event.type === "step" || event.type === "response") send(generationEventSchema.parse(event));
+              send({
+                type: "preview",
+                svg: safeSvgSchema.parse(event.svg.source),
+              });
+            } else if (
+              event.type === "retrieval" ||
+              event.type === "activity" ||
+              event.type === "tool" ||
+              event.type === "step" ||
+              event.type === "response"
+            )
+              send(generationEventSchema.parse(event));
           },
         );
         if (signal.aborted) throw new Error("Aborted");

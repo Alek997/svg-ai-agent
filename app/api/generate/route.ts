@@ -18,11 +18,31 @@ export async function POST(request: Request) {
     );
   }
   after(flushTracking);
-  return handleSavedGeneration(request, userId, (input, signal, progress, onEvent) =>
-    generateSvg(input, signal, progress, undefined, onEvent),
-    { observe: input => startGenerationTracking(input, userId),
-      retrieve: (run, input, signal) => searchCollection(userId, run.collectionId!, retrievalQuery(run.initialRequest!, input.messages.at(-1)!.content), signal, run.assistantMessageId),
-      generateWithReferences: (input, signal, progress, event, detail) => generateSvg(input, signal, progress, undefined, event, undefined, detail),
+  return handleSavedGeneration(
+    request,
+    userId,
+    (input, signal, progress, onEvent) =>
+      generateSvg(input, signal, progress, undefined, onEvent),
+    {
+      observe: (input) => startGenerationTracking(input, userId),
+      retrieve: (run, input, signal) =>
+        searchCollection(
+          userId,
+          run.collectionId!,
+          retrievalQuery(run.initialRequest!, input.messages.at(-1)!.content),
+          signal,
+          run.assistantMessageId,
+        ),
+      generateWithReferences: (input, signal, progress, event, detail) =>
+        generateSvg(
+          input,
+          signal,
+          progress,
+          undefined,
+          event,
+          undefined,
+          detail,
+        ),
     },
   );
 }

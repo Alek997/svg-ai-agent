@@ -7,7 +7,10 @@ import { createWebSearch } from "./web-search";
 import { summarizeUsage } from "./usage";
 import type { GenerateSvg } from "./handle-generation";
 import { toolTraceSchema } from "../workspace/contracts";
-import type { GenerationRequest, GenerationEvent } from "../workspace/contracts";
+import type {
+  GenerationRequest,
+  GenerationEvent,
+} from "../workspace/contracts";
 import { createSvgPreview, readStreamedSvg } from "../svg/progressive-svg";
 
 export async function generateSvg(
@@ -58,14 +61,28 @@ export async function generateSvg(
       text = "";
       stepTools = [];
       lastResponse = "";
-      onEvent?.({ type: "step", detail: { step, status: "running", description: "The model is processing this step." } });
+      onEvent?.({
+        type: "step",
+        detail: {
+          step,
+          status: "running",
+          description: "The model is processing this step.",
+        },
+      });
       onEvent?.({ type: "activity", step, action: "working" });
     }
     if (part.type === "tool-input-start") {
       toolInputs.set(part.id, { name: part.toolName, text: "" });
-      if (part.toolName === "querySvg" || part.toolName === "validateSvg" || part.toolName === "webSearch") {
+      if (
+        part.toolName === "querySvg" ||
+        part.toolName === "validateSvg" ||
+        part.toolName === "webSearch"
+      ) {
         onEvent?.({ type: "activity", step, action: part.toolName });
-        onEvent?.({ type: "tool", call: { id: part.id, name: part.toolName, step, status: "pending" } });
+        onEvent?.({
+          type: "tool",
+          call: { id: part.id, name: part.toolName, step, status: "pending" },
+        });
       }
     }
     if (part.type === "tool-input-delta") {
@@ -82,20 +99,45 @@ export async function generateSvg(
       toolInputs.delete(part.id);
     }
     if (part.type === "tool-call") stepTools.push(part.toolName);
-    if (part.type === "tool-call" || part.type === "tool-result" || part.type === "tool-error") {
-      if (part.toolName === "querySvg" || part.toolName === "validateSvg" || part.toolName === "webSearch") {
+    if (
+      part.type === "tool-call" ||
+      part.type === "tool-result" ||
+      part.type === "tool-error"
+    ) {
+      if (
+        part.toolName === "querySvg" ||
+        part.toolName === "validateSvg" ||
+        part.toolName === "webSearch"
+      ) {
         const parsed = toolTraceSchema.safeParse({
-          id: part.toolCallId, name: part.toolName, step,
-          status: part.type === "tool-call" ? "running" : part.type === "tool-result" ? "completed" : "error",
+          id: part.toolCallId,
+          name: part.toolName,
+          step,
+          status:
+            part.type === "tool-call"
+              ? "running"
+              : part.type === "tool-result"
+                ? "completed"
+                : "error",
           ...(part.type === "tool-call" ? { input: part.input } : {}),
           ...(part.type === "tool-result" ? { output: part.output } : {}),
-          ...(part.type === "tool-error" ? { error: "The tool could not complete this call." } : {}),
+          ...(part.type === "tool-error"
+            ? { error: "The tool could not complete this call." }
+            : {}),
         });
         // Never expose raw SDK/provider errors or malformed tool arguments.
-        onEvent?.({ type: "tool", call: parsed.success ? parsed.data : {
-          id: part.toolCallId, name: part.toolName, step, status: "error",
-          error: "The tool call contained unsupported input or output.",
-        } });
+        onEvent?.({
+          type: "tool",
+          call: parsed.success
+            ? parsed.data
+            : {
+                id: part.toolCallId,
+                name: part.toolName,
+                step,
+                status: "error",
+                error: "The tool call contained unsupported input or output.",
+              },
+        });
       }
     }
     if (part.type === "text-delta") {
@@ -108,27 +150,43 @@ export async function generateSvg(
       let description = stepTools.length
         ? `Called ${stepTools.join(", ")}; the tool results are available for the next model step.`
         : "The model returned its final response.";
-      if (part.finishReason === "length") description = "The model reached the output token limit for this step.";
-      if (part.finishReason === "error") description = "The model stopped with an error.";
+      if (part.finishReason === "length")
+        description = "The model reached the output token limit for this step.";
+      if (part.finishReason === "error")
+        description = "The model stopped with an error.";
       // Only a public response message may be shown. Never forward reasoning
       // deltas, provider metadata or an unparsed model transcript.
       if (!stepTools.length) {
         try {
           const response: unknown = JSON.parse(text);
-          if (response && typeof response === "object" && "message" in response && typeof response.message === "string") {
+          if (
+            response &&
+            typeof response === "object" &&
+            "message" in response &&
+            typeof response.message === "string"
+          ) {
             description = response.message.trim().slice(0, 2000) || description;
           }
-        } catch { /* A partial/invalid response is still checked by the final validator. */ }
+        } catch {
+          /* A partial/invalid response is still checked by the final validator. */
+        }
       }
-      onEvent?.({ type: "step", detail: { step, status: "completed", description } });
+      onEvent?.({
+        type: "step",
+        detail: { step, status: "completed", description },
+      });
     }
     if (characters > 384_000) throw new Error("Output limit exceeded");
   }
   const metadata = await result.output;
   const svg = agent.getValidatedSvg();
-  if (!svg) throw new Error("The agent did not finish with a validated SVG proposal.");
+  if (!svg)
+    throw new Error("The agent did not finish with a validated SVG proposal.");
   return {
     output: { ...metadata, svg },
-    usage: summarizeUsage(typeof model === "string" ? model : model.modelId, await result.totalUsage),
+    usage: summarizeUsage(
+      typeof model === "string" ? model : model.modelId,
+      await result.totalUsage,
+    ),
   };
 }

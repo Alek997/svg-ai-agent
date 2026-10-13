@@ -232,16 +232,14 @@ export function createCollectionSearch(
           if (!owner)
             throw new ConversationError("Generation is no longer active.", 409);
           for (const ref of selected)
-            await tx
-              .insert(references)
-              .values({
-                id: ref.id,
-                ownerId,
-                assistantMessageId,
-                iconId: ref.iconId,
-                hash: ref.hash,
-                source: ref.source,
-              });
+            await tx.insert(references).values({
+              id: ref.id,
+              ownerId,
+              assistantMessageId,
+              iconId: ref.iconId,
+              hash: ref.hash,
+              source: ref.source,
+            });
         }
         return {
           query,

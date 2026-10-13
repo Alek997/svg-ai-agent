@@ -6,7 +6,11 @@ import { usePathname } from "./navigation";
 function Fixture() {
   const pathname = usePathname();
   return (
-    <main className={pathname === "/collections" ? "" : "flex h-dvh flex-col overflow-hidden"}>
+    <main
+      className={
+        pathname === "/collections" ? "" : "flex h-dvh flex-col overflow-hidden"
+      }
+    >
       <header className="flex shrink-0 flex-wrap gap-4 border-b border-stone-200 bg-white p-4 text-xs">
         <strong>
           Synthetic browser fixture · mocked policy/providers · disposable DB

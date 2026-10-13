@@ -1,0 +1,18 @@
+# Dependencies and generated output
+node_modules/
+.next/
+out/
+build/
+coverage/
+.vercel/
+.yarn/
+.pnp*
+next-env.d.ts
+*.tsbuildinfo
+
+# Local secrets and generated test/evaluation data
+.env*
+!.env.example
+*.pem
+test-data/
+evaluations/runs/

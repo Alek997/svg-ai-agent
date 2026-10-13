@@ -27,9 +27,8 @@ export function SvgCanvas({
     source: string;
     status: "copied" | "error";
   } | null>(null);
-  const copyStatus = copyFeedback?.source === document.source
-    ? copyFeedback.status
-    : null;
+  const copyStatus =
+    copyFeedback?.source === document.source ? copyFeedback.status : null;
   const image = useRef<HTMLImageElement>(null);
   const objectUrl = useRef<string | null>(null);
   const attachImage = useCallback((node: HTMLImageElement | null) => {
@@ -69,7 +68,8 @@ export function SvgCanvas({
   // Download availability changes independently from image rendering.
   useEffect(() => {
     if (!download.current) return;
-    if (isLoading || !objectUrl.current) download.current.removeAttribute("href");
+    if (isLoading || !objectUrl.current)
+      download.current.removeAttribute("href");
     else download.current.href = objectUrl.current;
   }, [document.source, isLoading]);
 
@@ -119,15 +119,24 @@ export function SvgCanvas({
           </div>
         </div>
       </div>
-      <div aria-busy={isLoading} className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12 lg:min-h-0">
+      <div
+        aria-busy={isLoading}
+        className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12 lg:min-h-0"
+      >
         {isLoading && (
-          <div role="status" className="absolute top-4 z-10 flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-4 py-2 text-xs text-stone-600 shadow-sm">
+          <div
+            role="status"
+            className="absolute top-4 z-10 flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-4 py-2 text-xs text-stone-600 shadow-sm"
+          >
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700" />
             {activity}
           </div>
         )}
         {isLoading && !hasPreview && isSample && view === "preview" && (
-          <div aria-hidden="true" className="absolute h-64 w-64 animate-pulse rounded-2xl border border-stone-200 bg-stone-100" />
+          <div
+            aria-hidden="true"
+            className="absolute h-64 w-64 animate-pulse rounded-2xl border border-stone-200 bg-stone-100"
+          />
         )}
         {view === "preview" ? (
           <>
@@ -164,12 +173,24 @@ export function SvgCanvas({
           <div className="w-full overflow-hidden rounded-xl border border-stone-200 bg-white">
             <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2">
               <span className="text-xs text-stone-500">SVG source</span>
-              <Button variant="ghost" onClick={copySource} disabled={isLoading} aria-label="Copy SVG code">
+              <Button
+                variant="ghost"
+                onClick={copySource}
+                disabled={isLoading}
+                aria-label="Copy SVG code"
+              >
                 <Icon name="copy" width={14} height={14} />
                 {copyStatus === "copied" ? "Copied!" : "Copy code"}
               </Button>
             </div>
-            <p role="status" className={copyStatus === "error" ? "px-4 pt-3 text-xs text-red-600" : "sr-only"}>
+            <p
+              role="status"
+              className={
+                copyStatus === "error"
+                  ? "px-4 pt-3 text-xs text-red-600"
+                  : "sr-only"
+              }
+            >
               {copyStatus === "copied"
                 ? "SVG code copied to clipboard."
                 : copyStatus === "error"
@@ -187,7 +208,7 @@ export function SvgCanvas({
         <div className="mt-7 flex items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-xs">
           <Button
             variant="ghost"
-            onClick={() => setZoom(value => value / 1.25)}
+            onClick={() => setZoom((value) => value / 1.25)}
             disabled={view === "source"}
             aria-label="Zoom out"
           >
@@ -198,7 +219,7 @@ export function SvgCanvas({
           </span>
           <Button
             variant="ghost"
-            onClick={() => setZoom(value => value * 1.25)}
+            onClick={() => setZoom((value) => value * 1.25)}
             disabled={view === "source"}
             aria-label="Zoom in"
           >

@@ -21,15 +21,30 @@ export async function WorkspaceHeader() {
             </span>
           </h1>
           <p className="mt-0.5 text-xs text-stone-500">
-            Model: <span className="font-medium text-stone-600">{getConfiguredModelName()}</span>
+            Model:{" "}
+            <span className="font-medium text-stone-600">
+              {getConfiguredModelName()}
+            </span>
           </p>
         </div>
       </div>
       <div className="flex items-center gap-4">
         {/* Full navigation triggers the workspace's beforeunload draft/run guard. */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-        <a href="/conversations" className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50">My SVGs</a>
-        {enabled && <a href="/collections" className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50">Collections</a>}
+        <a
+          href="/conversations"
+          className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+        >
+          My SVGs
+        </a>
+        {enabled && (
+          <a
+            href="/collections"
+            className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+          >
+            Collections
+          </a>
+        )}
         <UserButton />
       </div>
     </header>

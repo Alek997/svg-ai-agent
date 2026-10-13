@@ -32,7 +32,13 @@ type ChatPanelProps = {
 
 export function ChatPanel({
   messages,
-  currentId = null, historyRefresh = 0, onOpenConversation, olderCursor, loadingOlder, onLoadOlder, onRefreshConversation,
+  currentId = null,
+  historyRefresh = 0,
+  onOpenConversation,
+  olderCursor,
+  loadingOlder,
+  onLoadOlder,
+  onRefreshConversation,
   onSend,
   onReset,
   draft,
@@ -51,8 +57,17 @@ export function ChatPanel({
     const previous = lastMessages.current;
     lastMessages.current = messages;
     // Loading older messages should not move the reader back to the latest turn.
-    if (previous.length && messages.length > previous.length && previous.at(-1)?.id === messages.at(-1)?.id && previous[1]?.id !== messages[1]?.id) return;
-    history.current?.scrollTo({ top: history.current.scrollHeight, behavior: "smooth" });
+    if (
+      previous.length &&
+      messages.length > previous.length &&
+      previous.at(-1)?.id === messages.at(-1)?.id &&
+      previous[1]?.id !== messages[1]?.id
+    )
+      return;
+    history.current?.scrollTo({
+      top: history.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages, isLoading, error]);
   return (
     <aside
@@ -78,11 +93,32 @@ export function ChatPanel({
         </Button>
       </div>
       <p className="border-b border-stone-200 bg-stone-50 px-5 py-3 text-[11px] leading-5 text-stone-600">
-        Conversations and completed artwork are saved to your account. Older messages stay in history, but edits use recent context and the latest SVG.
-        {onRefreshConversation && <button type="button" onClick={onRefreshConversation} className="mt-1 block underline">Refresh saved conversation</button>}
-        {trackingEnabled && <span className="mt-2 block">Prompts, generated artwork, and feedback are recorded to help improve SVG Studio. Avoid sharing sensitive information.</span>}
+        Conversations and completed artwork are saved to your account. Older
+        messages stay in history, but edits use recent context and the latest
+        SVG.
+        {onRefreshConversation && (
+          <button
+            type="button"
+            onClick={onRefreshConversation}
+            className="mt-1 block underline"
+          >
+            Refresh saved conversation
+          </button>
+        )}
+        {trackingEnabled && (
+          <span className="mt-2 block">
+            Prompts, generated artwork, and feedback are recorded to help
+            improve SVG Studio. Avoid sharing sensitive information.
+          </span>
+        )}
       </p>
-      {onOpenConversation && <ConversationHistory currentId={currentId} refreshKey={historyRefresh} onOpen={onOpenConversation} />}
+      {onOpenConversation && (
+        <ConversationHistory
+          currentId={currentId}
+          refreshKey={historyRefresh}
+          onOpen={onOpenConversation}
+        />
+      )}
       <div
         ref={history}
         role="log"
@@ -90,37 +126,54 @@ export function ChatPanel({
         aria-live="polite"
         className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5"
       >
-        {!currentId && <p className="text-center text-[10px] uppercase tracking-[0.15em] text-stone-400">
-          A little inspiration goes a long way
-        </p>}
-        {olderCursor && <button type="button" onClick={onLoadOlder} disabled={loadingOlder} className="block w-full text-xs text-stone-500 underline">{loadingOlder ? "Loading…" : "Load earlier messages"}</button>}
+        {!currentId && (
+          <p className="text-center text-[10px] uppercase tracking-[0.15em] text-stone-400">
+            A little inspiration goes a long way
+          </p>
+        )}
+        {olderCursor && (
+          <button
+            type="button"
+            onClick={onLoadOlder}
+            disabled={loadingOlder}
+            className="block w-full text-xs text-stone-500 underline"
+          >
+            {loadingOlder ? "Loading…" : "Load earlier messages"}
+          </button>
+        )}
         {messages.map((message) => (
           <ChatMessage key={message.id} message={message} />
         ))}
         {isLoading && (
           <p role="status" className="ml-10 text-xs text-stone-500">
-            {activity}{progress > 0 ? ` · ${progress.toLocaleString()} characters` : ""}
+            {activity}
+            {progress > 0 ? ` · ${progress.toLocaleString()} characters` : ""}
           </p>
         )}
-        {!currentId && messages.length === 1 && messages[0].id === "welcome" && !isLoading && (
-          <div className="ml-10 space-y-2 pt-2">
-            <p className="mb-3 text-[11px] text-stone-400">Try starting with</p>
-            {[
-              "A minimal mountain landscape",
-              "A friendly robot in soft colors",
-              "A geometric flower icon",
-            ].map((prompt) => (
-              <button
-                key={prompt}
-                onClick={() => onSend(prompt)}
-                className="block w-full rounded-lg border border-stone-200 px-3 py-2.5 text-left text-xs text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50"
-              >
-                {prompt}
-                <span className="float-right text-stone-400">↗</span>
-              </button>
-            ))}
-          </div>
-        )}
+        {!currentId &&
+          messages.length === 1 &&
+          messages[0].id === "welcome" &&
+          !isLoading && (
+            <div className="ml-10 space-y-2 pt-2">
+              <p className="mb-3 text-[11px] text-stone-400">
+                Try starting with
+              </p>
+              {[
+                "A minimal mountain landscape",
+                "A friendly robot in soft colors",
+                "A geometric flower icon",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => onSend(prompt)}
+                  className="block w-full rounded-lg border border-stone-200 px-3 py-2.5 text-left text-xs text-stone-600 transition-colors hover:border-stone-400 hover:bg-stone-50"
+                >
+                  {prompt}
+                  <span className="float-right text-stone-400">↗</span>
+                </button>
+              ))}
+            </div>
+          )}
       </div>
       {error && (
         <div
@@ -129,13 +182,24 @@ export function ChatPanel({
         >
           <p>{error}</p>
           {onRetry && (
-            <Button onClick={onRetry} disabled={isLoading || retrySeconds > 0} className="mt-2">
-              {retrySeconds > 0 ? `Retry in ${retrySeconds}s` : "Retry generation"}
+            <Button
+              onClick={onRetry}
+              disabled={isLoading || retrySeconds > 0}
+              className="mt-2"
+            >
+              {retrySeconds > 0
+                ? `Retry in ${retrySeconds}s`
+                : "Retry generation"}
             </Button>
           )}
         </div>
       )}
-      <ChatComposer onSend={onSend} draft={draft} onDraftChange={onDraftChange} isLoading={isLoading} />
+      <ChatComposer
+        onSend={onSend}
+        draft={draft}
+        onDraftChange={onDraftChange}
+        isLoading={isLoading}
+      />
     </aside>
   );
 }

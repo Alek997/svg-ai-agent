@@ -36,11 +36,15 @@ export function getOpenAIProvider() {
 
 export function getLLM() {
   const environment = getEnvironment();
-  return createOpenAI({ apiKey: environment.OPENAI_API_KEY }).responses(environment.OPENAI_MODEL);
+  return createOpenAI({ apiKey: environment.OPENAI_API_KEY }).responses(
+    environment.OPENAI_MODEL,
+  );
 }
 
 // The header needs only the public model name, never API credentials.
 export function getConfiguredModelName() {
-  const result = environmentSchema.shape.OPENAI_MODEL.safeParse(process.env.OPENAI_MODEL);
+  const result = environmentSchema.shape.OPENAI_MODEL.safeParse(
+    process.env.OPENAI_MODEL,
+  );
   return result.success ? result.data : "Unavailable";
 }
