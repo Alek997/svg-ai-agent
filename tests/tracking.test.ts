@@ -8,7 +8,7 @@ import {
 } from "../lib/ai/feedback-token";
 import { handleFeedback } from "../lib/ai/handle-feedback";
 import { createGenerationObserver } from "../lib/ai/tracking";
-import { handleGeneration } from "../lib/ai/handle-generation";
+import { handleSvgGenerationOnServer } from "../lib/ai/handle-generation";
 import {
   generationRequestSchema,
   type GenerationRequest,
@@ -224,9 +224,9 @@ function fakeSpan() {
 
 test("generation trace contains final validated SVG, history, tool results and tokens", async () => {
   const span = fakeSpan();
-  const response = await handleGeneration(
-    request(input, "generate"),
-    async (_input, _signal, _progress, event) => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(input, "generate"),
+    generateSvgOnServer: async (_input, _signal, _progress, event) => {
       event?.({
         type: "tool",
         call: {
@@ -249,10 +249,10 @@ test("generation trace contains final validated SVG, history, tool results and t
       });
       return generated;
     },
-    undefined,
-    async () => ({ kind: "generation" as const }),
-    (value) => createGenerationObserver(span, value, user, secret),
-  );
+    checkGenerationPolicy: async () => ({ kind: "generation" as const }),
+    startGenerationTracking: (value) =>
+      createGenerationObserver(span, value, user, secret),
+  });
   const events = (await response.text())
     .trim()
     .split("\n")
@@ -308,19 +308,19 @@ test("generation trace contains final validated SVG, history, tool results and t
 
 test("unsafe generation records failure and never issues feedback permission", async () => {
   const span = fakeSpan();
-  const response = await handleGeneration(
-    request(input, "generate"),
-    async () => ({
+  const response = await handleSvgGenerationOnServer({
+    request: request(input, "generate"),
+    generateSvgOnServer: async () => ({
       ...generated,
       output: {
         ...generated.output,
         svg: "<svg><script>alert(1)</script></svg>",
       },
     }),
-    undefined,
-    async () => ({ kind: "generation" as const }),
-    (value) => createGenerationObserver(span, value, user, secret),
-  );
+    checkGenerationPolicy: async () => ({ kind: "generation" as const }),
+    startGenerationTracking: (value) =>
+      createGenerationObserver(span, value, user, secret),
+  });
   const body = await response.text();
   assert.equal(body.includes("feedbackToken"), false);
   assert.equal(
@@ -335,19 +335,19 @@ test("unsafe generation records failure and never issues feedback permission", a
 
 test("conversational turns finish tracking without artwork or feedback permission", async () => {
   const span = fakeSpan();
-  const response = await handleGeneration(
-    request(input, "generate"),
-    async () => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(input, "generate"),
+    generateSvgOnServer: async () => {
       throw new Error("Must not generate");
     },
-    undefined,
-    async () => ({
+    checkGenerationPolicy: async () => ({
       kind: "reply",
       reason: "conversation",
       message: "You’re welcome!",
     }),
-    (value) => createGenerationObserver(span, value, user, secret),
-  );
+    startGenerationTracking: (value) =>
+      createGenerationObserver(span, value, user, secret),
+  });
   assert.deepEqual(JSON.parse(await response.text()), {
     type: "reply",
     reason: "conversation",
@@ -367,13 +367,13 @@ for (const changed of [false, true]) {
   test(`feedback permission requires changed artwork: ${changed}`, async () => {
     const span = fakeSpan();
     const currentSvg = changed ? svg.replace('fill="blue"', 'fill="red"') : svg;
-    const response = await handleGeneration(
-      request({ ...input, currentSvg }, "generate"),
-      async () => generated,
-      undefined,
-      async () => ({ kind: "generation" }),
-      (value) => createGenerationObserver(span, value, user, secret),
-    );
+    const response = await handleSvgGenerationOnServer({
+      request: request({ ...input, currentSvg }, "generate"),
+      generateSvgOnServer: async () => generated,
+      checkGenerationPolicy: async () => ({ kind: "generation" }),
+      startGenerationTracking: (value) =>
+        createGenerationObserver(span, value, user, secret),
+    });
     const result = JSON.parse(
       (await response.text()).trim().split("\n").at(-1)!,
     );
@@ -397,13 +397,12 @@ test("tracking failure does not break generation, and disabled tracking has no f
     input,
     user,
   );
-  const response = await handleGeneration(
-    request(input, "generate"),
-    async () => generated,
-    undefined,
-    async () => ({ kind: "generation" as const }),
-    () => observer,
-  );
+  const response = await handleSvgGenerationOnServer({
+    request: request(input, "generate"),
+    generateSvgOnServer: async () => generated,
+    checkGenerationPolicy: async () => ({ kind: "generation" as const }),
+    startGenerationTracking: () => observer,
+  });
   const body = await response.text();
   assert.equal(body.includes('"type":"result"'), true);
   assert.equal(body.includes("feedbackToken"), false);

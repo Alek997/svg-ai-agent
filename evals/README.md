@@ -70,7 +70,7 @@ do not generate a different checklist for each output.
 
 ## 2. Task — what application behavior do we run?
 
-`task.ts` calls the existing **streaming** `generateSvg()` function, rather than
+`task.ts` calls the existing **streaming** `streamSvgGenerationOnServer()` function, rather than
 building a second agent or copying its system prompt. It captures public step
 and tool events, provider-reported usage, total generation time, and time to
 first valid preview snapshot. That preview time is a server measurement, not

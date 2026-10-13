@@ -8,11 +8,11 @@ import { z } from "zod";
 import { createCollectionStore } from "../../lib/collections/store";
 import { createCollectionProcessor } from "../../lib/collections/process";
 import {
-  createCollectionSearch,
-  retrievalQuery,
+  createOwnedCollectionReferenceRetriever,
+  buildCollectionRetrievalQuery,
 } from "../../lib/collections/retrieval";
 import { createConversationStore } from "../../lib/conversations/store";
-import { handleSavedGeneration } from "../../lib/conversations/generate";
+import { handleSavedSvgGenerationOnServer } from "../../lib/conversations/generate";
 import { createConversationSchema } from "../../lib/conversations/contracts";
 import {
   conversationErrorResponse,
@@ -22,7 +22,7 @@ import {
 import { publicSvgResponse, readPublicSvg } from "../../lib/svg/public-result";
 import type { withDatabase } from "../../lib/db/client";
 import type { CollectionProviders } from "../../lib/collections/providers";
-import type { GenerateSvg } from "../../lib/ai/handle-generation";
+import type { ServerSvgGenerator } from "../../lib/ai/handle-generation";
 import type { Retrieval } from "../../lib/collections/contracts";
 const connectionString = process.env.TEST_DATABASE_URL;
 if (
@@ -76,11 +76,14 @@ const providers: CollectionProviders = {
   },
 };
 const processCollection = createCollectionProcessor(runDatabase, providers),
-  search = createCollectionSearch(runDatabase, providers);
+  search = createOwnedCollectionReferenceRetriever({
+    runDatabase,
+    providers,
+  });
 const source =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>';
 const generate =
-  (references?: Retrieval): GenerateSvg =>
+  (references?: Retrieval): ServerSvgGenerator =>
   async (_input, signal, progress, event) => {
     const drawing = references?.references[0]?.source ?? source;
     progress(100);
@@ -166,7 +169,14 @@ async function route(request: Request) {
       return jsonResponse({ retried: true });
     }
     if (action === "search")
-      return jsonResponse(await search(owner, id, body.query, request.signal));
+      return jsonResponse(
+        await search({
+          authenticatedUserId: owner,
+          collectionId: id,
+          query: body.query,
+          signal: request.signal,
+        }),
+      );
     if (action === "add-result")
       return jsonResponse(
         await collections.addResult(owner, id, body.conversationId),
@@ -200,19 +210,36 @@ async function route(request: Request) {
       failGeneration = false;
       return jsonResponse({ error: "Mocked unavailable request. Retry." }, 503);
     }
-    return handleSavedGeneration(request, owner, generate(), {
-      store: conversations,
-      checkPolicy: async () => ({ kind: "generation" }),
-      retrieve: (run, input, signal) =>
-        search(
-          owner,
-          run.collectionId!,
-          retrievalQuery(run.initialRequest!, input.messages.at(-1)!.content),
+    return handleSavedSvgGenerationOnServer({
+      request,
+      authenticatedUserId: owner,
+      generateSvgWithoutCollectionReferences: generate(),
+      generationDependencies: {
+        store: conversations,
+        checkGenerationPolicy: async () => ({ kind: "generation" }),
+        retrieveCollectionReferencesForRun: ({
+          startedConversationRun: run,
+          svgGenerationRequest: input,
           signal,
-          run.assistantMessageId,
-        ),
-      generateWithReferences: (input, signal, progress, event, detail) =>
-        generate(detail)(input, signal, progress, event),
+        }) =>
+          search({
+            authenticatedUserId: owner,
+            collectionId: run.collectionId!,
+            query: buildCollectionRetrievalQuery({
+              initialArtworkRequest: run.initialRequest!,
+              latestUserMessage: input.messages.at(-1)!.content,
+            }),
+            signal,
+            assistantMessageId: run.assistantMessageId,
+          }),
+        generateSvgWithCollectionReferences: ({
+          svgGenerationRequest: input,
+          signal,
+          onProgress: progress,
+          onEvent: event,
+          collectionRetrievalContext: detail,
+        }) => generate(detail)(input, signal, progress, event),
+      },
     });
   }
   return new Response(html, { headers: { "Content-Type": "text/html" } });

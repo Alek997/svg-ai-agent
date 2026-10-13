@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { selectContext, applyEvent } from "../lib/conversations/state";
-import { handleSavedGeneration } from "../lib/conversations/generate";
+import { handleSavedSvgGenerationOnServer } from "../lib/conversations/generate";
 import {
   submissionSchema,
   storedDetailsSchema,
@@ -162,9 +162,14 @@ test("persistence waits for the final database commit before exposing success", 
     committing();
     await gate;
   };
-  const response = await handleSavedGeneration(request, "owner", generate, {
-    store,
-    checkPolicy: policy,
+  const response = await handleSavedSvgGenerationOnServer({
+    request,
+    authenticatedUserId: "owner",
+    generateSvgWithoutCollectionReferences: generate,
+    generationDependencies: {
+      store,
+      checkGenerationPolicy: policy,
+    },
   });
   const reader = response.body!.getReader();
   const first = new TextDecoder().decode((await reader.read()).value);
@@ -190,19 +195,19 @@ test("persistence waits for the final database commit before exposing success", 
 test("policy rejection is saved, excluded from context, and never calls SVG generation", async () => {
   const { request, store, saved } = setup();
   const { InputPolicyError } = await import("../lib/ai/input-policy");
-  const response = await handleSavedGeneration(
+  const response = await handleSavedSvgGenerationOnServer({
     request,
-    "owner",
-    async () => {
+    authenticatedUserId: "owner",
+    generateSvgWithoutCollectionReferences: async () => {
       throw new Error("Must not generate");
     },
-    {
+    generationDependencies: {
       store,
-      checkPolicy: async () => {
+      checkGenerationPolicy: async () => {
         throw new InputPolicyError("Rejected", 422);
       },
     },
-  );
+  });
   const output = await events(response);
   assert.equal(output.at(-1).retryable, false);
   assert.equal(saved[0].excluded, true);
@@ -211,13 +216,18 @@ test("policy rejection is saved, excluded from context, and never calls SVG gene
 test("clarification replies are persisted without replacing artwork", async () => {
   const { request, store, saved, generate } = setup();
   const output = await events(
-    await handleSavedGeneration(request, "owner", generate, {
-      store,
-      checkPolicy: async () => ({
-        kind: "reply",
-        reason: "clarification",
-        message: "Which color?",
-      }),
+    await handleSavedSvgGenerationOnServer({
+      request,
+      authenticatedUserId: "owner",
+      generateSvgWithoutCollectionReferences: generate,
+      generationDependencies: {
+        store,
+        checkGenerationPolicy: async () => ({
+          kind: "reply",
+          reason: "clarification",
+          message: "Which color?",
+        }),
+      },
     }),
   );
   assert.equal(output.at(-1).type, "reply");
@@ -233,9 +243,14 @@ test("failed final persistence emits an error, never success or an unsaved SVG c
     return original(...args);
   };
   const output = await events(
-    await handleSavedGeneration(request, "owner", generate, {
-      store,
-      checkPolicy: policy,
+    await handleSavedSvgGenerationOnServer({
+      request,
+      authenticatedUserId: "owner",
+      generateSvgWithoutCollectionReferences: generate,
+      generationDependencies: {
+        store,
+        checkGenerationPolicy: policy,
+      },
     }),
   );
   assert.equal(output.at(-1).type, "error");
@@ -250,14 +265,14 @@ test("ownership/storage failures stop before model execution", async () => {
   };
   assert.equal(
     (
-      await handleSavedGeneration(
+      await handleSavedSvgGenerationOnServer({
         request,
-        "other",
-        async () => {
+        authenticatedUserId: "other",
+        generateSvgWithoutCollectionReferences: async () => {
           throw new Error("Must not generate");
         },
-        { store },
-      )
+        generationDependencies: { store },
+      })
     ).status,
     404,
   );
@@ -273,14 +288,14 @@ test("duplicate completed requests replay the existing result without saving or 
     usage,
   });
   const output = await events(
-    await handleSavedGeneration(
+    await handleSavedSvgGenerationOnServer({
       request,
-      "owner",
-      async () => {
+      authenticatedUserId: "owner",
+      generateSvgWithoutCollectionReferences: async () => {
         throw new Error("Must not generate");
       },
-      { store },
-    ),
+      generationDependencies: { store },
+    }),
   );
   assert.equal(output[0].replayed, true);
   assert.equal(output.at(-1).type, "result");
@@ -319,10 +334,10 @@ test("disconnect cancels the model and saves an interrupted attempt", async () =
   const modelStarted = new Promise<void>((resolve) => {
     started = resolve;
   });
-  const response = await handleSavedGeneration(
+  const response = await handleSavedSvgGenerationOnServer({
     request,
-    "owner",
-    async (_, signal) => {
+    authenticatedUserId: "owner",
+    generateSvgWithoutCollectionReferences: async (_, signal) => {
       started();
       return new Promise((_, reject) =>
         signal.addEventListener("abort", () => reject(new Error("aborted")), {
@@ -330,8 +345,8 @@ test("disconnect cancels the model and saves an interrupted attempt", async () =
         }),
       );
     },
-    { store, checkPolicy: policy },
-  );
+    generationDependencies: { store, checkGenerationPolicy: policy },
+  });
   const reader = response.body!.getReader();
   await reader.read();
   await modelStarted;
@@ -348,10 +363,10 @@ test("disconnect cancels the model and saves an interrupted attempt", async () =
 test("unsafe final SVGs are persisted as failure without a result", async () => {
   const { request, store, saved } = setup();
   const output = await events(
-    await handleSavedGeneration(
+    await handleSavedSvgGenerationOnServer({
       request,
-      "owner",
-      async () => ({
+      authenticatedUserId: "owner",
+      generateSvgWithoutCollectionReferences: async () => ({
         output: {
           message: "Bad",
           filename: "bad.svg",
@@ -359,8 +374,8 @@ test("unsafe final SVGs are persisted as failure without a result", async () => 
         },
         usage,
       }),
-      { store, checkPolicy: policy },
-    ),
+      generationDependencies: { store, checkGenerationPolicy: policy },
+    }),
   );
   assert.equal(output.at(-1).type, "error");
   assert.equal(saved.at(-1)?.message.runStatus, "error");
@@ -385,30 +400,31 @@ test("private collection runs retrieve once after approval and never start track
     references: [],
     conventions: [],
   };
-  const response = await handleSavedGeneration(request, "owner", generate, {
-    store,
-    checkPolicy: async () => {
-      approved = true;
-      return { kind: "generation" };
-    },
-    observe: () => {
-      throw new Error("Private content must never be tracked");
-    },
-    retrieve: async () => {
-      assert.equal(approved, true);
-      searches++;
-      return detail;
-    },
-    generateWithReferences: async (
-      _input,
-      _signal,
-      _progress,
-      _event,
-      evidence,
-    ) => {
-      assert.deepEqual(evidence, detail);
-      generationCalls++;
-      return generate();
+  const response = await handleSavedSvgGenerationOnServer({
+    request,
+    authenticatedUserId: "owner",
+    generateSvgWithoutCollectionReferences: generate,
+    generationDependencies: {
+      store,
+      checkGenerationPolicy: async () => {
+        approved = true;
+        return { kind: "generation" };
+      },
+      startGenerationTracking: () => {
+        throw new Error("Private content must never be tracked");
+      },
+      retrieveCollectionReferencesForRun: async () => {
+        assert.equal(approved, true);
+        searches++;
+        return detail;
+      },
+      generateSvgWithCollectionReferences: async ({
+        collectionRetrievalContext,
+      }) => {
+        assert.deepEqual(collectionRetrievalContext, detail);
+        generationCalls++;
+        return generate();
+      },
     },
   });
   const received = await events(response);
@@ -425,22 +441,27 @@ test("policy replies perform no retrieval; retrieval failure is retryable and ca
     run.private = true;
     run.collectionId = randomUUID();
     let calls = 0;
-    const response = await handleSavedGeneration(request, "owner", generate, {
-      store,
-      checkPolicy: async () =>
-        denied
-          ? {
-              kind: "reply",
-              reason: "clarification",
-              message: "Describe an icon.",
-            }
-          : { kind: "generation" },
-      retrieve: async () => {
-        calls++;
-        throw new Error("Private provider detail");
-      },
-      generateWithReferences: async () => {
-        throw new Error("Must not generate");
+    const response = await handleSavedSvgGenerationOnServer({
+      request,
+      authenticatedUserId: "owner",
+      generateSvgWithoutCollectionReferences: generate,
+      generationDependencies: {
+        store,
+        checkGenerationPolicy: async () =>
+          denied
+            ? {
+                kind: "reply",
+                reason: "clarification",
+                message: "Describe an icon.",
+              }
+            : { kind: "generation" },
+        retrieveCollectionReferencesForRun: async () => {
+          calls++;
+          throw new Error("Private provider detail");
+        },
+        generateSvgWithCollectionReferences: async () => {
+          throw new Error("Must not generate");
+        },
       },
     });
     const received = await events(response);

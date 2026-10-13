@@ -471,7 +471,7 @@ test("feedback is owned, persisted and rejects expired tokens", async () => {
 // Collection infrastructure uses only synthetic SVGs and mocked providers.
 import { createCollectionStore } from "../../lib/collections/store";
 import { createCollectionProcessor } from "../../lib/collections/process";
-import { createCollectionSearch } from "../../lib/collections/retrieval";
+import { createOwnedCollectionReferenceRetriever } from "../../lib/collections/retrieval";
 import type { CollectionProviders } from "../../lib/collections/providers";
 const collectionStore = createCollectionStore(runDatabase);
 const ragStore = createConversationStore(runDatabase, async () => {});
@@ -505,7 +505,10 @@ async function fixture(owner = "user_a", count = 1) {
   return collection;
 }
 const processIcons = createCollectionProcessor(runDatabase, providers, render);
-const searchIcons = createCollectionSearch(runDatabase, providers);
+const searchIcons = createOwnedCollectionReferenceRetriever({
+  runDatabase,
+  providers,
+});
 const signal = () => new AbortController().signal;
 
 test("collection upload partially succeeds, deduplicates and isolates owners", async () => {
@@ -537,7 +540,13 @@ test("collection upload partially succeeds, deduplicates and isolates owners", a
     notFound,
   );
   await assert.rejects(
-    () => searchIcons("user_b", collection.id, "circle", signal()),
+    () =>
+      searchIcons({
+        authenticatedUserId: "user_b",
+        collectionId: collection.id,
+        query: "circle",
+        signal: signal(),
+      }),
     notFound,
   );
   await assert.rejects(
@@ -762,11 +771,14 @@ test("daily analysis and hourly search counters stop provider calls at their lim
     /limit reached/,
   );
   assert.equal(calls, 0);
-  const search = createCollectionSearch(runDatabase, {
-    ...providers,
-    embed: async (...args) => {
-      calls++;
-      return providers.embed(...args);
+  const search = createOwnedCollectionReferenceRetriever({
+    runDatabase,
+    providers: {
+      ...providers,
+      embed: async (...args) => {
+        calls++;
+        return providers.embed(...args);
+      },
     },
   });
   await db.insert(collectionUsage).values({
@@ -776,7 +788,13 @@ test("daily analysis and hourly search counters stop provider calls at their lim
     count: 120,
   });
   await assert.rejects(
-    () => search("user_a", collection.id, "circle", signal()),
+    () =>
+      search({
+        authenticatedUserId: "user_a",
+        collectionId: collection.id,
+        query: "circle",
+        signal: signal(),
+      }),
     /limit reached/,
   );
   assert.equal(calls, 0);
@@ -791,12 +809,12 @@ test("hybrid retrieval filters owners before ranking and generation uses identic
     .update(collectionIcons)
     .set({ embeddingModel: "foreign-incompatible" })
     .where(eq(collectionIcons.collectionId, other.id));
-  const playground = await searchIcons(
-    "user_a",
-    collection.id,
-    "circle",
-    signal(),
-  );
+  const playground = await searchIcons({
+    authenticatedUserId: "user_a",
+    collectionId: collection.id,
+    query: "circle",
+    signal: signal(),
+  });
   assert.equal(playground.candidates.length, 3);
   assert.ok(
     playground.candidates.every((row) => row.keywordRank && row.semanticRank),
@@ -811,13 +829,13 @@ test("hybrid retrieval filters owners before ranking and generation uses identic
     "user_a",
     submit(conversation.id, 0, "circle"),
   );
-  const generated = await searchIcons(
-    "user_a",
-    collection.id,
-    "circle",
-    signal(),
-    run.assistantMessageId,
-  );
+  const generated = await searchIcons({
+    authenticatedUserId: "user_a",
+    collectionId: collection.id,
+    query: "circle",
+    signal: signal(),
+    assistantMessageId: run.assistantMessageId,
+  });
   assert.deepEqual(generated.candidates, playground.candidates);
   assert.equal(generated.references.length, 3);
   const message = applyEvent(
@@ -887,14 +905,26 @@ test("changed embedding model requires explicit reindexing", async () => {
     .set({ embeddingModel: "incompatible" })
     .where(eq(collectionIcons.id, icon.id));
   await assert.rejects(
-    () => searchIcons("user_a", collection.id, "circle", signal()),
+    () =>
+      searchIcons({
+        authenticatedUserId: "user_a",
+        collectionId: collection.id,
+        query: "circle",
+        signal: signal(),
+      }),
     /Reindex/,
   );
   await collectionStore.retry("user_a", collection.id, icon.id, true);
   await processIcons("user_a", collection.id, signal());
   assert.equal(
-    (await searchIcons("user_a", collection.id, "circle", signal())).candidates
-      .length,
+    (
+      await searchIcons({
+        authenticatedUserId: "user_a",
+        collectionId: collection.id,
+        query: "circle",
+        signal: signal(),
+      })
+    ).candidates.length,
     1,
   );
 });
@@ -1032,13 +1062,13 @@ test("retrieval query uses the first artwork turn rather than earlier greetings"
     submit(conversation.id, 1, "Draw a circle"),
   );
   assert.equal(artwork.initialRequest, "Draw a circle");
-  const detail = await searchIcons(
-    "user_a",
-    collection.id,
-    artwork.initialRequest!,
-    signal(),
-    artwork.assistantMessageId,
-  );
+  const detail = await searchIcons({
+    authenticatedUserId: "user_a",
+    collectionId: collection.id,
+    query: artwork.initialRequest!,
+    signal: signal(),
+    assistantMessageId: artwork.assistantMessageId,
+  });
   await ragStore.save(
     "user_a",
     artwork,

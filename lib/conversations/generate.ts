@@ -1,7 +1,8 @@
 import "server-only";
+import type { Retrieval } from "../collections/contracts";
 import {
-  handleGeneration,
-  type GenerateSvg,
+  handleSvgGenerationOnServer,
+  type ServerSvgGenerator,
   type GenerationObserver,
 } from "../ai/handle-generation";
 import { checkGenerationPolicy, type PolicyOutcome } from "../ai/input-policy";
@@ -16,26 +17,31 @@ import { submissionSchema } from "./contracts";
 import { conversationStore, type StartedRun } from "./store";
 import { readJson, conversationErrorResponse } from "./http";
 
-type Store = Pick<typeof conversationStore, "begin" | "save">;
-type Options = {
-  retrieve?: (
-    run: StartedRun,
-    input: GenerationRequest,
-    signal: AbortSignal,
-  ) => Promise<import("../collections/contracts").Retrieval>;
-  generateWithReferences?: (
-    input: GenerationRequest,
-    signal: AbortSignal,
-    progress: (n: number) => void,
-    event: ((event: GenerationEvent) => void) | undefined,
-    detail: import("../collections/contracts").Retrieval,
-  ) => ReturnType<GenerateSvg>;
-  store?: Store;
-  checkPolicy?: (
-    input: GenerationRequest,
+type ConversationGenerationStore = Pick<
+  typeof conversationStore,
+  "begin" | "save"
+>;
+type SavedGenerationDependencies = {
+  retrieveCollectionReferencesForRun?: (parameters: {
+    startedConversationRun: StartedRun;
+    svgGenerationRequest: GenerationRequest;
+    signal: AbortSignal;
+  }) => Promise<Retrieval>;
+  generateSvgWithCollectionReferences?: (parameters: {
+    svgGenerationRequest: GenerationRequest;
+    signal: AbortSignal;
+    onProgress: (characters: number) => void;
+    onEvent?: (event: GenerationEvent) => void;
+    collectionRetrievalContext: Retrieval;
+  }) => ReturnType<ServerSvgGenerator>;
+  store?: ConversationGenerationStore;
+  checkGenerationPolicy?: (
+    svgGenerationRequest: GenerationRequest,
     signal: AbortSignal,
   ) => Promise<PolicyOutcome>;
-  observe?: (input: GenerationRequest) => GenerationObserver | undefined;
+  startGenerationTracking?: (
+    svgGenerationRequest: GenerationRequest,
+  ) => GenerationObserver | undefined;
   timeoutMs?: number;
 };
 const streamHeaders = {
@@ -46,16 +52,24 @@ const streamHeaders = {
 
 // Persistence surrounds the existing tested generation engine. Only server-built
 // history crosses into it, and terminal success waits for the database commit.
-export async function handleSavedGeneration(
-  request: Request,
-  userId: string,
-  generate: GenerateSvg,
-  options: Options = {},
-) {
-  const store = options.store ?? conversationStore;
+export async function handleSavedSvgGenerationOnServer({
+  request,
+  authenticatedUserId,
+  generateSvgWithoutCollectionReferences,
+  generationDependencies = {},
+}: {
+  request: Request;
+  authenticatedUserId: string;
+  generateSvgWithoutCollectionReferences: ServerSvgGenerator;
+  generationDependencies?: SavedGenerationDependencies;
+}) {
+  const store = generationDependencies.store ?? conversationStore;
   let run: StartedRun;
   try {
-    run = await store.begin(userId, await readJson(request, submissionSchema));
+    run = await store.begin(
+      authenticatedUserId,
+      await readJson(request, submissionSchema),
+    );
   } catch (error) {
     return conversationErrorResponse(error);
   }
@@ -111,17 +125,17 @@ export async function handleSavedGeneration(
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: GenerationEvent) => {
+      const emitSavedGenerationEvent = (event: GenerationEvent) => {
         if (!closed && !signal.aborted)
           controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
       };
-      async function persistError(
+      async function persistGenerationError(
         event: Extract<GenerationEvent, { type: "error" }>,
       ) {
         if (terminalSaved) return;
         message = finishDetails(applyEvent(message, event));
         await store.save(
-          userId,
+          authenticatedUserId,
           run,
           message,
           true,
@@ -131,41 +145,57 @@ export async function handleSavedGeneration(
         terminalSaved = true;
       }
       try {
-        send(started);
+        emitSavedGenerationEvent(started);
         signal.throwIfAborted();
-        const input = new Request(request.url, {
+        const serverContextRequest = new Request(request.url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(run.input),
           signal,
         });
-        const withRetrieval: GenerateSvg = async (
-          input,
-          signal,
-          progress,
-          event,
-        ) => {
-          if (!run.collectionId)
-            return generate(input, signal, progress, event);
-          if (!options.retrieve || !options.generateWithReferences)
-            throw new Error("Retrieval unavailable.");
-          const detail = await options.retrieve(run, input, signal);
-          event?.({ type: "retrieval", detail });
-          return options.generateWithReferences(
-            input,
-            signal,
-            progress,
-            event,
-            detail,
-          );
-        };
-        const response = await handleGeneration(
-          input,
-          withRetrieval,
-          options.timeoutMs ?? GENERATION_TIMEOUT_MS,
-          options.checkPolicy ?? checkGenerationPolicy,
-          run.private ? undefined : options.observe,
-        );
+        const generateSvgWithOptionalCollectionReferences: ServerSvgGenerator =
+          async (svgGenerationRequest, signal, onProgress, onEvent) => {
+            if (!run.collectionId)
+              return generateSvgWithoutCollectionReferences(
+                svgGenerationRequest,
+                signal,
+                onProgress,
+                onEvent,
+              );
+            if (
+              !generationDependencies.retrieveCollectionReferencesForRun ||
+              !generationDependencies.generateSvgWithCollectionReferences
+            )
+              throw new Error("Retrieval unavailable.");
+            const collectionRetrievalContext =
+              await generationDependencies.retrieveCollectionReferencesForRun({
+                startedConversationRun: run,
+                svgGenerationRequest,
+                signal,
+              });
+            onEvent?.({
+              type: "retrieval",
+              detail: collectionRetrievalContext,
+            });
+            return generationDependencies.generateSvgWithCollectionReferences({
+              svgGenerationRequest,
+              signal,
+              onProgress,
+              onEvent,
+              collectionRetrievalContext,
+            });
+          };
+        const response = await handleSvgGenerationOnServer({
+          request: serverContextRequest,
+          generateSvgOnServer: generateSvgWithOptionalCollectionReferences,
+          timeoutMs: generationDependencies.timeoutMs ?? GENERATION_TIMEOUT_MS,
+          checkGenerationPolicy:
+            generationDependencies.checkGenerationPolicy ??
+            checkGenerationPolicy,
+          startGenerationTracking: run.private
+            ? undefined
+            : generationDependencies.startGenerationTracking,
+        });
         if (!response.ok) {
           const body = await response.json();
           const event: GenerationEvent = {
@@ -174,14 +204,14 @@ export async function handleSavedGeneration(
             excludedFromContext: response.status === 422,
             retryable: response.status !== 422,
           };
-          await persistError(event);
-          send(event);
+          await persistGenerationError(event);
+          emitSavedGenerationEvent(event);
           return;
         }
         reader = response.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        async function consume(line: string) {
+        async function persistAndEmitStreamedEvent(line: string) {
           if (!line.trim()) return;
           signal.throwIfAborted();
           const event = generationEventSchema.parse(JSON.parse(line));
@@ -193,7 +223,7 @@ export async function handleSavedGeneration(
           if (terminal) {
             message = finishDetails(message);
             await store.save(
-              userId,
+              authenticatedUserId,
               run,
               message,
               true,
@@ -201,10 +231,10 @@ export async function handleSavedGeneration(
             );
             terminalSaved = true;
           } else if (Date.now() - lastSave >= 1000) {
-            await store.save(userId, run, message, false);
+            await store.save(authenticatedUserId, run, message, false);
             lastSave = Date.now();
           }
-          send(event);
+          emitSavedGenerationEvent(event);
         }
         while (true) {
           const { done, value } = await reader.read();
@@ -212,12 +242,12 @@ export async function handleSavedGeneration(
           buffer += decoder.decode(value, { stream: true });
           let newline: number;
           while ((newline = buffer.indexOf("\n")) !== -1) {
-            await consume(buffer.slice(0, newline));
+            await persistAndEmitStreamedEvent(buffer.slice(0, newline));
             buffer = buffer.slice(newline + 1);
           }
         }
         buffer += decoder.decode();
-        await consume(buffer);
+        await persistAndEmitStreamedEvent(buffer);
         if (!terminalSaved) throw new Error("Generation interrupted");
       } catch {
         const event: GenerationEvent = {
@@ -239,11 +269,11 @@ export async function handleSavedGeneration(
             flow: message.flow?.filter((entry) => entry.kind !== "result"),
           };
           try {
-            await persistError(event);
+            await persistGenerationError(event);
           } catch {
             failureToSave = true;
           }
-          send(
+          emitSavedGenerationEvent(
             failureToSave
               ? {
                   ...event,

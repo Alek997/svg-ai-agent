@@ -14,15 +14,21 @@ export class GenerationRequestError extends Error {
   }
 }
 
-export async function requestGeneration(
-  input: GenerationRequest | import("../conversations/contracts").Submission,
-  signal: AbortSignal,
-  onEvent: (event: GenerationEvent) => void,
-) {
+export async function requestSavedSvgGenerationOnClient({
+  submission,
+  signal,
+  onGenerationEvent,
+}: {
+  submission:
+    | GenerationRequest
+    | import("../conversations/contracts").Submission;
+  signal: AbortSignal;
+  onGenerationEvent: (event: GenerationEvent) => void;
+}) {
   const response = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(submission),
     signal,
   });
   if (!response.ok) {
@@ -53,11 +59,11 @@ export async function requestGeneration(
       throw new Error("Unexpected data after generation finished.");
     const event = generationEventSchema.parse(JSON.parse(line));
     if (event.type === "error") {
-      onEvent(event);
+      onGenerationEvent(event);
       throw new Error(event.message);
     }
     if (event.type === "result" || event.type === "reply") completed = true;
-    onEvent(event);
+    onGenerationEvent(event);
   }
   try {
     while (true) {

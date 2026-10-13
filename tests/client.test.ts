@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   GenerationRequestError,
-  requestGeneration,
+  requestSavedSvgGenerationOnClient,
 } from "../lib/workspace/generate-client";
 import type { GenerationEvent } from "../lib/workspace/contracts";
 import { loadConversation } from "../lib/conversations/client";
@@ -56,9 +56,11 @@ test("client accepts a terminal conversational reply without an SVG", async (con
       }),
   );
   const events: GenerationEvent[] = [];
-  await requestGeneration(input, new AbortController().signal, (event) =>
-    events.push(event),
-  );
+  await requestSavedSvgGenerationOnClient({
+    submission: input,
+    signal: new AbortController().signal,
+    onGenerationEvent: (event) => events.push(event),
+  });
   assert.deepEqual(events, [reply]);
 });
 
@@ -79,7 +81,11 @@ test("client rejects artwork or feedback attached to a conversational reply", as
       ),
   );
   await assert.rejects(() =>
-    requestGeneration(input, new AbortController().signal, () => {}),
+    requestSavedSvgGenerationOnClient({
+      submission: input,
+      signal: new AbortController().signal,
+      onGenerationEvent: () => {},
+    }),
   );
 });
 
@@ -101,7 +107,12 @@ test("client rejects extra events after a terminal reply", async (context) => {
       ),
   );
   await assert.rejects(
-    () => requestGeneration(input, new AbortController().signal, () => {}),
+    () =>
+      requestSavedSvgGenerationOnClient({
+        submission: input,
+        signal: new AbortController().signal,
+        onGenerationEvent: () => {},
+      }),
     /after generation finished/,
   );
 });
@@ -113,8 +124,12 @@ test("client distinguishes policy rejection from temporary check failure", async
     );
     await assert.rejects(
       () =>
-        requestGeneration(input, new AbortController().signal, () => {
-          throw new Error("Must not emit generation events");
+        requestSavedSvgGenerationOnClient({
+          submission: input,
+          signal: new AbortController().signal,
+          onGenerationEvent: () => {
+            throw new Error("Must not emit generation events");
+          },
         }),
       (error) =>
         error instanceof GenerationRequestError &&
@@ -152,9 +167,11 @@ test("client sends messages and decodes JSON records split across UTF-8 chunks",
     },
   );
   const events: GenerationEvent[] = [];
-  await requestGeneration(input, new AbortController().signal, (event) =>
-    events.push(event),
-  );
+  await requestSavedSvgGenerationOnClient({
+    submission: input,
+    signal: new AbortController().signal,
+    onGenerationEvent: (event) => events.push(event),
+  });
   assert.deepEqual(events, [{ type: "progress", characters: 0 }, result]);
 });
 
@@ -184,7 +201,12 @@ for (const [name, response, pattern] of [
   test(`client reports ${name}`, async (t) => {
     t.mock.method(globalThis, "fetch", async () => response());
     await assert.rejects(
-      () => requestGeneration(input, new AbortController().signal, () => {}),
+      () =>
+        requestSavedSvgGenerationOnClient({
+          submission: input,
+          signal: new AbortController().signal,
+          onGenerationEvent: () => {},
+        }),
       pattern,
     );
   });

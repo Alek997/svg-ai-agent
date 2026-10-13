@@ -5,24 +5,19 @@ import {
   MAX_REQUEST_BYTES,
 } from "../lib/workspace/contracts";
 import {
-  handleGeneration as handleWithPolicy,
-  type GenerateSvg,
+  handleSvgGenerationOnServer as handleWithPolicy,
+  type ServerSvgGenerator,
 } from "../lib/ai/handle-generation";
 import { safeSvgSchema } from "../lib/svg/validate-svg";
 
 // Transport/SVG tests isolate the gate; dedicated policy tests mock its providers.
-const handleGeneration: typeof handleWithPolicy = (
-  request,
-  generate,
-  timeout,
-  check,
-) =>
-  handleWithPolicy(
-    request,
-    generate,
-    timeout,
-    check ?? (async () => ({ kind: "generation" as const })),
-  );
+const handleSvgGenerationOnServer: typeof handleWithPolicy = (parameters) =>
+  handleWithPolicy({
+    ...parameters,
+    checkGenerationPolicy:
+      parameters.checkGenerationPolicy ??
+      (async () => ({ kind: "generation" as const })),
+  });
 
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="blue"/></svg>';
@@ -78,9 +73,12 @@ for (const [name, body] of [
   test(`rejects ${name} before a model call`, async () => {
     assert.equal(generationRequestSchema.safeParse(body).success, false);
     let calls = 0;
-    const response = await handleGeneration(request(body), async () => {
-      calls++;
-      return validOutput;
+    const response = await handleSvgGenerationOnServer({
+      request: request(body),
+      generateSvgOnServer: async () => {
+        calls++;
+        return validOutput;
+      },
     });
     assert.equal(response.status, 400);
     assert.equal(calls, 0);
@@ -88,43 +86,43 @@ for (const [name, body] of [
 }
 
 test("caps streamed request bodies without Content-Length", async () => {
-  const response = await handleGeneration(
-    new Request("http://localhost/api/generate", {
+  const response = await handleSvgGenerationOnServer({
+    request: new Request("http://localhost/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "x".repeat(MAX_REQUEST_BYTES + 1),
     }),
-    async () => {
+    generateSvgOnServer: async () => {
       throw new Error("Must not call");
     },
-  );
+  });
   assert.equal(response.status, 413);
 });
 
 test("rejects malformed JSON and wrong content type", async () => {
-  const generate: GenerateSvg = async () => validOutput;
+  const generate: ServerSvgGenerator = async () => validOutput;
   assert.equal(
     (
-      await handleGeneration(
-        new Request("http://localhost/api/generate", {
+      await handleSvgGenerationOnServer({
+        request: new Request("http://localhost/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: "{",
         }),
-        generate,
-      )
+        generateSvgOnServer: generate,
+      })
     ).status,
     400,
   );
   assert.equal(
     (
-      await handleGeneration(
-        new Request("http://localhost/api/generate", {
+      await handleSvgGenerationOnServer({
+        request: new Request("http://localhost/api/generate", {
           method: "POST",
           body: "{}",
         }),
-        generate,
-      )
+        generateSvgOnServer: generate,
+      })
     ).status,
     415,
   );
@@ -140,16 +138,16 @@ test("streams progress and validated result, passing history and current SVG", a
     currentSvg: svg,
   };
   let calls = 0;
-  const response = await handleGeneration(
-    request(body),
-    async (received, signal, progress) => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(body),
+    generateSvgOnServer: async (received, signal, progress) => {
       calls++;
       assert.deepEqual(received, body);
       assert.equal(signal.aborted, false);
       progress(50);
       return validOutput;
     },
-  );
+  });
   const events = (await response.text())
     .trim()
     .split("\n")
@@ -215,17 +213,20 @@ for (const [name, unsafe] of [
 ] as const) {
   test(`rejects ${name} in current SVG and model output`, async () => {
     assert.equal(safeSvgSchema.safeParse(unsafe).success, false);
-    const before = await handleGeneration(
-      request({ ...input, currentSvg: unsafe }),
-      async () => {
+    const before = await handleSvgGenerationOnServer({
+      request: request({ ...input, currentSvg: unsafe }),
+      generateSvgOnServer: async () => {
         throw new Error("Must not call");
       },
-    );
+    });
     assert.equal(before.status, 400);
-    const after = await handleGeneration(request(input), async () => ({
-      output: { ...artwork, svg: unsafe },
-      usage,
-    }));
+    const after = await handleSvgGenerationOnServer({
+      request: request(input),
+      generateSvgOnServer: async () => ({
+        output: { ...artwork, svg: unsafe },
+        usage,
+      }),
+    });
     const text = await after.text();
     assert.match(text, /"type":"error"/);
     assert.doesNotMatch(text, /"type":"result"/);
@@ -240,9 +241,12 @@ test("accepts gradients with local references and text with escaped XML", () => 
 
 test("HTTP handler redacts errors without restarting the whole generation", async () => {
   let calls = 0;
-  const response = await handleGeneration(request(input), async () => {
-    calls++;
-    throw new Error("SECRET_API_KEY provider internals");
+  const response = await handleSvgGenerationOnServer({
+    request: request(input),
+    generateSvgOnServer: async () => {
+      calls++;
+      throw new Error("SECRET_API_KEY provider internals");
+    },
   });
   const text = await response.text();
   assert.equal(calls, 1);
@@ -251,31 +255,31 @@ test("HTTP handler redacts errors without restarting the whole generation", asyn
 });
 
 test("timeout aborts a model call and emits a safe error", async () => {
-  const response = await handleGeneration(
-    request(input),
-    async (_, signal) =>
+  const response = await handleSvgGenerationOnServer({
+    request: request(input),
+    generateSvgOnServer: async (_, signal) =>
       new Promise((_, reject) => {
         signal.addEventListener("abort", () => reject(new Error("aborted")), {
           once: true,
         });
       }),
-    10,
-  );
+    timeoutMs: 10,
+  });
   assert.match(await response.text(), /timed out/);
 });
 
 test("disconnecting cancels model generation", async () => {
   let modelSignal: AbortSignal | undefined;
-  const response = await handleGeneration(
-    request(input),
-    async (_, signal) =>
+  const response = await handleSvgGenerationOnServer({
+    request: request(input),
+    generateSvgOnServer: async (_, signal) =>
       new Promise((_, reject) => {
         modelSignal = signal;
         signal.addEventListener("abort", () => reject(new Error("aborted")), {
           once: true,
         });
       }),
-  );
+  });
   const reader = response.body!.getReader();
   await reader.read();
   await reader.cancel();
@@ -283,9 +287,9 @@ test("disconnecting cancels model generation", async () => {
 });
 
 test("preview events are safety checked before transport and cannot commit unsafe output", async () => {
-  const response = await handleGeneration(
-    request(input),
-    async (_, __, ___, emit) => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(input),
+    generateSvgOnServer: async (_, __, ___, emit) => {
       emit?.({
         type: "preview",
         svg: {
@@ -296,7 +300,7 @@ test("preview events are safety checked before transport and cannot commit unsaf
       });
       return validOutput;
     },
-  );
+  });
   const text = await response.text();
   assert.doesNotMatch(text, /"type":"preview"|"type":"result"|script/);
   assert.match(text, /"type":"error"/);
@@ -307,15 +311,15 @@ test("many large previews reserve response budget for the final document", async
     "</svg>",
     "<text>" + "x".repeat(45_000) + "</text></svg>",
   );
-  const response = await handleGeneration(
-    request(input),
-    async (_, __, ___, emit) => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(input),
+    generateSvgOnServer: async (_, __, ___, emit) => {
       for (let index = 0; index < 100; index++) {
         emit?.({ type: "preview", svg: { source, width: 100, height: 100 } });
       }
       return validOutput;
     },
-  );
+  });
   const text = await response.text();
   assert.ok(new TextEncoder().encode(text).length < 1_500_000);
   assert.ok(
@@ -334,9 +338,9 @@ test("tool calls and results are streamed separately from the final assistant re
     input: {},
     output: { source: svg, version: 0 },
   };
-  const response = await handleGeneration(
-    request(input),
-    async (_, __, ___, emit) => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(input),
+    generateSvgOnServer: async (_, __, ___, emit) => {
       emit?.({
         type: "step",
         detail: { step: 1, status: "running", description: "Model working" },
@@ -352,7 +356,7 @@ test("tool calls and results are streamed separately from the final assistant re
       });
       return validOutput;
     },
-  );
+  });
   const events = (await response.text())
     .trim()
     .split("\n")

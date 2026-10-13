@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireRag } from "@/lib/collections/access";
 import { collectionStore } from "@/lib/collections/store";
 import { processCollection } from "@/lib/collections/process";
-import { searchCollection } from "@/lib/collections/retrieval";
+import { retrieveOwnedCollectionReferencesOnServer } from "@/lib/collections/retrieval";
 import {
   readJson,
   jsonResponse,
@@ -50,7 +50,12 @@ export async function POST(
         20_000,
       );
       return jsonResponse(
-        await searchCollection(userId, id, query, request.signal),
+        await retrieveOwnedCollectionReferencesOnServer({
+          authenticatedUserId: userId,
+          collectionId: id,
+          query,
+          signal: request.signal,
+        }),
       );
     }
     if (action === "add-result") {

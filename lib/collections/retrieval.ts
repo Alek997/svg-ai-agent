@@ -36,7 +36,7 @@ export function fuseRanks(
       fusedRank: number;
     }
   >();
-  const get = (id: string) => {
+  const getOrCreateFusedRank = (id: string) => {
     if (!merged.has(id))
       merged.set(id, {
         id,
@@ -49,13 +49,13 @@ export function fuseRanks(
     return merged.get(id)!;
   };
   semantic.forEach((row, i) => {
-    const item = get(row.id);
+    const item = getOrCreateFusedRank(row.id);
     item.semanticScore = row.score;
     item.semanticRank = i + 1;
     item.fusedScore += 1 / (60 + i + 1);
   });
   keyword.forEach((id, i) => {
-    const item = get(id);
+    const item = getOrCreateFusedRank(id);
     item.keywordRank = i + 1;
     item.fusedScore += 1 / (60 + i + 1);
   });
@@ -114,34 +114,57 @@ export function observeConventions(sources: string[]) {
         `${value} (observed in ${count}/${sources.length} searchable icons)`,
     );
 }
-export const retrievalQuery = (initial: string, latest: string) =>
-  initial === latest ? initial : `${initial}\n${latest}`;
-export function createCollectionSearch(
+export function buildCollectionRetrievalQuery({
+  initialArtworkRequest,
+  latestUserMessage,
+}: {
+  initialArtworkRequest: string;
+  latestUserMessage: string;
+}) {
+  return initialArtworkRequest === latestUserMessage
+    ? initialArtworkRequest
+    : `${initialArtworkRequest}\n${latestUserMessage}`;
+}
+export function createOwnedCollectionReferenceRetriever({
   runDatabase = withDatabase,
-  providers: CollectionProviders = collectionProviders,
-) {
-  return async (
-    ownerId: string,
-    collectionId: string,
-    query: string,
-    signal: AbortSignal,
-    assistantMessageId?: string,
-  ): Promise<Retrieval> => {
+  providers = collectionProviders,
+}: {
+  runDatabase?: typeof withDatabase;
+  providers?: CollectionProviders;
+} = {}) {
+  return async function retrieveOwnedCollectionReferences({
+    authenticatedUserId,
+    collectionId,
+    query,
+    signal,
+    assistantMessageId,
+  }: {
+    authenticatedUserId: string;
+    collectionId: string;
+    query: string;
+    signal: AbortSignal;
+    assistantMessageId?: string;
+  }): Promise<Retrieval> {
     const config = collectionModels();
     // Consume before the provider call, so failing searches cannot evade limits.
     await runDatabase((db) =>
       db.transaction(async (tx) => {
-        await lockCollection(tx, ownerId, collectionId);
-        await consumeUsage(tx, ownerId, "search");
+        await lockCollection(tx, authenticatedUserId, collectionId);
+        await consumeUsage(tx, authenticatedUserId, "search");
       }),
     );
     const { embeddings } = await providers.embed([query], signal);
     const vector = JSON.stringify(validateEmbedding(embeddings[0]));
     return runDatabase((db) =>
       db.transaction(async (tx) => {
-        const collection = await lockCollection(tx, ownerId, collectionId);
+        const collection = await lockCollection(
+          tx,
+          authenticatedUserId,
+          collectionId,
+        );
+        const collectionOwnerId = collection.ownerId;
         const scope = and(
-          eq(icons.ownerId, ownerId),
+          eq(icons.ownerId, authenticatedUserId),
           eq(icons.collectionId, collectionId),
           eq(icons.status, "ready"),
         );
@@ -218,23 +241,23 @@ export function createCollectionSearch(
           .orderBy(asc(icons.id))
           .limit(200);
         if (assistantMessageId) {
-          const [owner] = await tx
+          const [ownedActiveConversation] = await tx
             .select({ id: conversations.id })
             .from(conversations)
             .where(
               and(
-                eq(conversations.ownerId, ownerId),
+                eq(conversations.ownerId, authenticatedUserId),
                 eq(conversations.activeRunId, assistantMessageId),
                 eq(conversations.collectionId, collectionId),
                 eq(conversations.private, true),
               ),
             );
-          if (!owner)
+          if (!ownedActiveConversation)
             throw new ConversationError("Generation is no longer active.", 409);
           for (const ref of selected)
             await tx.insert(references).values({
               id: ref.id,
-              ownerId,
+              ownerId: collectionOwnerId,
               assistantMessageId,
               iconId: ref.iconId,
               hash: ref.hash,
@@ -255,5 +278,6 @@ export function createCollectionSearch(
     );
   };
 }
-export const searchCollection = createCollectionSearch();
+export const retrieveOwnedCollectionReferencesOnServer =
+  createOwnedCollectionReferenceRetriever({});
 export { withoutReferenceSources } from "./evidence";

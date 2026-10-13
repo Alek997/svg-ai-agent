@@ -10,7 +10,7 @@ import {
   moderateUserHistory,
   type PolicyChecks,
 } from "../lib/ai/input-policy";
-import { handleGeneration } from "../lib/ai/handle-generation";
+import { handleSvgGenerationOnServer } from "../lib/ai/handle-generation";
 import type { GenerationRequest } from "../lib/workspace/contracts";
 
 const input: GenerationRequest = {
@@ -136,17 +136,16 @@ for (const [choice, text, language, expected] of [
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"/>',
     };
     const order: string[] = [];
-    const response = await handleGeneration(
-      new Request("http://localhost/api/generate", {
+    const response = await handleSvgGenerationOnServer({
+      request: new Request("http://localhost/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestInput),
       }),
-      async () => {
+      generateSvgOnServer: async () => {
         throw new Error("Must not generate");
       },
-      undefined,
-      (received, abort) =>
+      checkGenerationPolicy: (received, abort) =>
         checkGenerationPolicy(received, abort, {
           moderate: async () => {
             order.push("moderate");
@@ -161,7 +160,7 @@ for (const [choice, text, language, expected] of [
             };
           },
         }),
-    );
+    });
     const events = (await response.text())
       .trim()
       .split("\n")
@@ -584,25 +583,24 @@ test("HTTP handler gates before streaming or generation, and passes approved fol
       body: JSON.stringify(input),
     });
   for (const status of [422, 503] as const) {
-    const response = await handleGeneration(
-      request(),
-      async () => {
+    const response = await handleSvgGenerationOnServer({
+      request: request(),
+      generateSvgOnServer: async () => {
         throw new Error("must not generate");
       },
-      undefined,
-      async () => {
+      checkGenerationPolicy: async () => {
         throw new InputPolicyError("safe policy error", status);
       },
-    );
+    });
     assert.equal(response.status, status);
     assert.match(response.headers.get("Content-Type")!, /application\/json/);
     assert.equal(response.headers.get("Cache-Control"), "no-store");
     assert.deepEqual(await response.json(), { error: "safe policy error" });
   }
   const order: string[] = [];
-  const response = await handleGeneration(
-    request(),
-    async () => {
+  const response = await handleSvgGenerationOnServer({
+    request: request(),
+    generateSvgOnServer: async () => {
       order.push("generate");
       return {
         output: {
@@ -619,12 +617,11 @@ test("HTTP handler gates before streaming or generation, and passes approved fol
         },
       };
     },
-    undefined,
-    async (received, abort) => {
+    checkGenerationPolicy: async (received, abort) => {
       order.push("policy");
       return checkGenerationPolicy(received, abort, checks);
     },
-  );
+  });
   assert.match(await response.text(), /"type":"result"/);
   assert.deepEqual(order, ["policy", "generate"]);
 });
@@ -634,16 +631,16 @@ test("the handler's default policy rejects dangerous moderation before generatio
   context.mock.method(globalThis, "fetch", async () =>
     Response.json(moderationResponse({ "sexual/minors": true })),
   );
-  const response = await handleGeneration(
-    new Request("http://localhost/api/generate", {
+  const response = await handleSvgGenerationOnServer({
+    request: new Request("http://localhost/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     }),
-    async () => {
+    generateSvgOnServer: async () => {
       throw new Error("must not generate");
     },
-  );
+  });
   assert.equal(response.status, 422);
   assert.match((await response.json()).error, /safety policy/);
 });

@@ -1,11 +1,12 @@
 import "server-only";
+import type { Retrieval } from "../collections/contracts";
 
 import type { LanguageModel } from "ai";
-import { buildSvgMessages, createSvgAgent } from "./svg-agent";
+import { buildSvgAgentMessages, createSvgAgent } from "./svg-agent";
 import { getLLM } from "./model";
 import { createWebSearch } from "./web-search";
 import { summarizeUsage } from "./usage";
-import type { GenerateSvg } from "./handle-generation";
+import type { ServerSvgGenerator } from "./handle-generation";
 import { toolTraceSchema } from "../workspace/contracts";
 import type {
   GenerationRequest,
@@ -13,18 +14,35 @@ import type {
 } from "../workspace/contracts";
 import { createSvgPreview, readStreamedSvg } from "../svg/progressive-svg";
 
-export async function generateSvg(
-  input: GenerationRequest,
-  signal: AbortSignal,
-  onProgress: (characters: number) => void,
-  model: LanguageModel = getLLM(),
-  onEvent?: (event: GenerationEvent) => void,
-  search = createWebSearch(),
-  retrieval?: import("../collections/contracts").Retrieval,
-): ReturnType<GenerateSvg> {
-  const agent = createSvgAgent(model, input.currentSvg, search);
+type SvgGenerationParameters = {
+  svgGenerationRequest: GenerationRequest;
+  signal: AbortSignal;
+  onProgress: (characters: number) => void;
+  onEvent?: (event: GenerationEvent) => void;
+  model?: LanguageModel;
+  webSearch?: ReturnType<typeof createWebSearch>;
+  collectionRetrievalContext?: Retrieval;
+};
+
+export async function streamSvgGenerationOnServer({
+  svgGenerationRequest,
+  signal,
+  onProgress,
+  model = getLLM(),
+  onEvent,
+  webSearch = createWebSearch(),
+  collectionRetrievalContext,
+}: SvgGenerationParameters): ReturnType<ServerSvgGenerator> {
+  const agent = createSvgAgent({
+    model,
+    currentSvg: svgGenerationRequest.currentSvg,
+    webSearch,
+  });
   const result = await agent.stream({
-    messages: buildSvgMessages(input, retrieval),
+    messages: buildSvgAgentMessages({
+      svgGenerationRequest,
+      collectionRetrievalContext,
+    }),
     abortSignal: signal,
   });
   let characters = 0;
@@ -35,19 +53,29 @@ export async function generateSvg(
   let stepTools: string[] = [];
   let lastResponse = "";
   const toolInputs = new Map<string, { name: string; text: string }>();
-  function update(json: string, force = false, isResponse = false) {
-    if (!force && Date.now() - lastUpdate < 250) return;
+  function emitProgressAndSafePreview({
+    streamedJson,
+    forceUpdate = false,
+    containsResponseMetadata = false,
+  }: {
+    streamedJson: string;
+    forceUpdate?: boolean;
+    containsResponseMetadata?: boolean;
+  }) {
+    if (!forceUpdate && Date.now() - lastUpdate < 250) return;
     onProgress(characters);
     lastUpdate = Date.now();
     // Only the structured public message is streamed; never reasoning deltas.
-    if (isResponse) {
-      const message = readStreamedSvg(json, "message")?.slice(0, 2000);
+    if (containsResponseMetadata) {
+      const message = readStreamedSvg(streamedJson, "message")?.slice(0, 2000);
       if (message && message !== lastResponse) {
         lastResponse = message;
         onEvent?.({ type: "response", step, text: message });
       }
     }
-    const source = isResponse ? null : readStreamedSvg(json);
+    const source = containsResponseMetadata
+      ? null
+      : readStreamedSvg(streamedJson);
     const svg = source && createSvgPreview(source);
     if (svg && svg.source !== lastPreview) {
       lastPreview = svg.source;
@@ -90,12 +118,17 @@ export async function generateSvg(
       const toolInput = toolInputs.get(part.id);
       if (toolInput) {
         toolInput.text += part.delta;
-        if (toolInput.name === "validateSvg") update(toolInput.text);
+        if (toolInput.name === "validateSvg")
+          emitProgressAndSafePreview({ streamedJson: toolInput.text });
       }
     }
     if (part.type === "tool-input-end") {
       const toolInput = toolInputs.get(part.id);
-      if (toolInput?.name === "validateSvg") update(toolInput.text, true);
+      if (toolInput?.name === "validateSvg")
+        emitProgressAndSafePreview({
+          streamedJson: toolInput.text,
+          forceUpdate: true,
+        });
       toolInputs.delete(part.id);
     }
     if (part.type === "tool-call") stepTools.push(part.toolName);
@@ -143,10 +176,17 @@ export async function generateSvg(
     if (part.type === "text-delta") {
       characters += part.text.length;
       text += part.text;
-      update(text, false, true);
+      emitProgressAndSafePreview({
+        streamedJson: text,
+        containsResponseMetadata: true,
+      });
     }
     if (part.type === "finish-step") {
-      update(text, true, true);
+      emitProgressAndSafePreview({
+        streamedJson: text,
+        forceUpdate: true,
+        containsResponseMetadata: true,
+      });
       let description = stepTools.length
         ? `Called ${stepTools.join(", ")}; the tool results are available for the next model step.`
         : "The model returned its final response.";
@@ -179,7 +219,7 @@ export async function generateSvg(
     if (characters > 384_000) throw new Error("Output limit exceeded");
   }
   const metadata = await result.output;
-  const svg = agent.getValidatedSvg();
+  const svg = agent.getLatestValidatedSvgProposal();
   if (!svg)
     throw new Error("The agent did not finish with a validated SVG proposal.");
   return {

@@ -8,10 +8,10 @@ import {
   fuseRanks,
   selectReferences,
   observeConventions,
-  retrievalQuery,
+  buildCollectionRetrievalQuery,
   withoutReferenceSources,
 } from "../lib/collections/retrieval";
-import { buildSvgMessages } from "../lib/ai/svg-agent";
+import { buildSvgAgentMessages } from "../lib/ai/svg-agent";
 import { renderSvg } from "../lib/svg/render-svg";
 import sharp from "sharp";
 const source =
@@ -112,10 +112,19 @@ test("conventions are parser observations and query construction uses initial pl
     ),
   );
   assert.equal(
-    retrievalQuery("Draw a circle", "Make it blue"),
+    buildCollectionRetrievalQuery({
+      initialArtworkRequest: "Draw a circle",
+      latestUserMessage: "Make it blue",
+    }),
     "Draw a circle\nMake it blue",
   );
-  assert.equal(retrievalQuery("Circle", "Circle"), "Circle");
+  assert.equal(
+    buildCollectionRetrievalQuery({
+      initialArtworkRequest: "Circle",
+      latestUserMessage: "Circle",
+    }),
+    "Circle",
+  );
 });
 test("stored evidence omits source copies and model references remain untrusted visual data", () => {
   const detail = {
@@ -135,10 +144,10 @@ test("stored evidence omits source copies and model references remain untrusted 
     conventions: [],
   };
   assert.equal(withoutReferenceSources(detail).references[0].source, null);
-  const messages = buildSvgMessages(
-    { messages: [{ role: "user", content: "Circle" }] },
-    detail,
-  );
+  const messages = buildSvgAgentMessages({
+    svgGenerationRequest: { messages: [{ role: "user", content: "Circle" }] },
+    collectionRetrievalContext: detail,
+  });
   assert.match(messages[0].content, /Untrusted collection reference data/);
   assert.ok(messages[0].content.includes(JSON.stringify(source)));
 });

@@ -26,8 +26,8 @@ const resultSchema = z
   })
   .strict();
 
-export type GenerateSvg = (
-  input: GenerationRequest,
+export type ServerSvgGenerator = (
+  svgGenerationRequest: GenerationRequest,
   signal: AbortSignal,
   onProgress: (characters: number) => void,
   onEvent?: (event: GenerationEvent) => void,
@@ -48,7 +48,7 @@ class RequestError extends Error {
   }
 }
 
-async function readRequest(request: Request) {
+async function readSvgGenerationRequest(request: Request) {
   if (
     request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !==
     "application/json"
@@ -102,19 +102,27 @@ async function readRequest(request: Request) {
   return parsed.data;
 }
 
-export async function handleGeneration(
-  request: Request,
-  generate: GenerateSvg,
+export async function handleSvgGenerationOnServer({
+  request,
+  generateSvgOnServer,
   timeoutMs = GENERATION_TIMEOUT_MS,
-  checkPolicy: (
-    input: GenerationRequest,
+  checkGenerationPolicy: evaluateGenerationPolicy = checkGenerationPolicy,
+  startGenerationTracking,
+}: {
+  request: Request;
+  generateSvgOnServer: ServerSvgGenerator;
+  timeoutMs?: number;
+  checkGenerationPolicy?: (
+    svgGenerationRequest: GenerationRequest,
     signal: AbortSignal,
-  ) => Promise<PolicyOutcome> = checkGenerationPolicy,
-  observe?: (input: GenerationRequest) => GenerationObserver | undefined,
-) {
-  let input: GenerationRequest;
+  ) => Promise<PolicyOutcome>;
+  startGenerationTracking?: (
+    svgGenerationRequest: GenerationRequest,
+  ) => GenerationObserver | undefined;
+}) {
+  let svgGenerationRequest: GenerationRequest;
   try {
-    input = await readRequest(request);
+    svgGenerationRequest = await readSvgGenerationRequest(request);
   } catch (error) {
     return Response.json(
       {
@@ -126,14 +134,17 @@ export async function handleGeneration(
       { status: error instanceof RequestError ? error.status : 400 },
     );
   }
-  const observer = observe?.(input);
+  const observer = startGenerationTracking?.(svgGenerationRequest);
   const cancellation = new AbortController();
   const timeout = setTimeout(() => cancellation.abort(), timeoutMs);
   const signal = AbortSignal.any([request.signal, cancellation.signal]);
   // Gate before starting the stream: denied requests cannot run tools or emit drafts.
   // The same overall deadline includes policy checks and generation.
   try {
-    const outcome = await checkPolicy(input, signal);
+    const outcome = await evaluateGenerationPolicy(
+      svgGenerationRequest,
+      signal,
+    );
     signal.throwIfAborted();
     if (outcome.kind === "reply") {
       const event = generationEventSchema.parse({
@@ -184,7 +195,7 @@ export async function handleGeneration(
   let responseBytes = 0;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (event: GenerationEvent) => {
+      const emitGenerationEvent = (event: GenerationEvent) => {
         observer?.event(event);
         if (!closed && !request.signal.aborted) {
           const chunk = encoder.encode(`${JSON.stringify(event)}\n`);
@@ -202,14 +213,14 @@ export async function handleGeneration(
         }
       };
       try {
-        send({ type: "progress", characters: 0 });
-        const raw = await generate(
-          input,
+        emitGenerationEvent({ type: "progress", characters: 0 });
+        const raw = await generateSvgOnServer(
+          svgGenerationRequest,
           signal,
-          (characters) => send({ type: "progress", characters }),
+          (characters) => emitGenerationEvent({ type: "progress", characters }),
           (event) => {
             if (event.type === "preview") {
-              send({
+              emitGenerationEvent({
                 type: "preview",
                 svg: safeSvgSchema.parse(event.svg.source),
               });
@@ -220,21 +231,22 @@ export async function handleGeneration(
               event.type === "step" ||
               event.type === "response"
             )
-              send(generationEventSchema.parse(event));
+              emitGenerationEvent(generationEventSchema.parse(event));
           },
         );
         if (signal.aborted) throw new Error("Aborted");
         const result = resultSchema.safeParse(raw.output);
         if (!result.success) {
-          send({
+          emitGenerationEvent({
             type: "error",
             message:
               "The model returned invalid or unsafe SVG. Try a simpler description.",
           });
         } else {
-          const changed = result.data.svg.source !== input.currentSvg;
+          const changed =
+            result.data.svg.source !== svgGenerationRequest.currentSvg;
           const feedbackToken = changed ? observer?.feedbackToken() : undefined;
-          send({
+          emitGenerationEvent({
             type: "result",
             message: result.data.message,
             usage: generationUsageSchema.parse(raw.usage),
@@ -247,7 +259,7 @@ export async function handleGeneration(
           });
         }
       } catch (error) {
-        send({
+        emitGenerationEvent({
           type: "error",
           message:
             error instanceof ModelConfigurationError

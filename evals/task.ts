@@ -1,7 +1,7 @@
 import "server-only";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
-import { generateSvg } from "../lib/ai/generate-svg";
+import { streamSvgGenerationOnServer } from "../lib/ai/generate-svg";
 import { modelOutputSchema } from "../lib/ai/svg-agent";
 import { safeSvgSchema } from "../lib/svg/validate-svg";
 import { GENERATION_TIMEOUT_MS } from "../lib/workspace/generation-limits";
@@ -26,7 +26,13 @@ const finalSchema = modelOutputSchema.extend({
 export function createEvalTask(
   model?: LanguageModel,
   generate: Generate = (input, signal, emit) =>
-    generateSvg(input, signal, () => {}, model, emit),
+    streamSvgGenerationOnServer({
+      svgGenerationRequest: input,
+      signal,
+      onProgress: () => {},
+      model,
+      onEvent: emit,
+    }),
 ) {
   return async (item: EvalCase): Promise<EvalOutput> => {
     const start = performance.now();

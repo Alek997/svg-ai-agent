@@ -15,7 +15,7 @@ import {
 import { applyEvent, finishDetails } from "@/lib/conversations/state";
 import {
   GenerationRequestError,
-  requestGeneration,
+  requestSavedSvgGenerationOnClient,
 } from "@/lib/workspace/generate-client";
 import { CLIENT_GENERATION_TIMEOUT_MS } from "@/lib/workspace/generation-limits";
 import type { ChatMessage, SvgDocument } from "@/lib/workspace/types";
@@ -68,47 +68,50 @@ export function useWorkspaceSession({
   const activeRequest = useRef<AbortController | null>(null);
   const pendingCreation = useRef<{ id: string; content: string } | null>(null);
 
-  const restore = useCallback((page: ConversationPage, merge = false) => {
-    conversationId.current = page.conversation.id;
-    setSavedConversation(page.conversation);
-    revision.current = page.conversation.revision;
-    setMessages((previous) =>
-      merge
-        ? [
-            ...previous.filter(
-              (message) =>
-                message.id !== "welcome" &&
-                message.position &&
-                !page.messages.some((saved) => saved.id === message.id),
-            ),
-            ...page.messages,
-          ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-        : page.messages,
-    );
-    setDocument(page.document);
-    setPublicId(page.publicId);
-    setPreview(null);
-    if (!merge) setOlderCursor(page.olderCursor);
-    setReady(true);
-    const last = page.messages.at(-1);
-    if (
-      last &&
-      ["error", "interrupted"].includes(last.runStatus) &&
-      last.retryable
-    ) {
-      setRetryInput({
-        kind: "retry",
-        conversationId: page.conversation.id,
-        retryOf: last.id,
-        requestId: crypto.randomUUID(),
-        expectedRevision: page.conversation.revision,
-      });
-      setError(last.runError ?? "Generation was interrupted. Please retry.");
-    } else {
-      setRetryInput(null);
-      setError(null);
-    }
-  }, []);
+  const restoreSavedConversationState = useCallback(
+    (page: ConversationPage, merge = false) => {
+      conversationId.current = page.conversation.id;
+      setSavedConversation(page.conversation);
+      revision.current = page.conversation.revision;
+      setMessages((previous) =>
+        merge
+          ? [
+              ...previous.filter(
+                (message) =>
+                  message.id !== "welcome" &&
+                  message.position &&
+                  !page.messages.some((saved) => saved.id === message.id),
+              ),
+              ...page.messages,
+            ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+          : page.messages,
+      );
+      setDocument(page.document);
+      setPublicId(page.publicId);
+      setPreview(null);
+      if (!merge) setOlderCursor(page.olderCursor);
+      setReady(true);
+      const last = page.messages.at(-1);
+      if (
+        last &&
+        ["error", "interrupted"].includes(last.runStatus) &&
+        last.retryable
+      ) {
+        setRetryInput({
+          kind: "retry",
+          conversationId: page.conversation.id,
+          retryOf: last.id,
+          requestId: crypto.randomUUID(),
+          expectedRevision: page.conversation.revision,
+        });
+        setError(last.runError ?? "Generation was interrupted. Please retry.");
+      } else {
+        setRetryInput(null);
+        setError(null);
+      }
+    },
+    [],
+  );
 
   const prepareSavedLoad = useCallback(() => {
     activeRequest.current?.abort();
@@ -129,7 +132,7 @@ export function useWorkspaceSession({
     leaseExpiresAt,
     isLoading,
     onBeforeLoad: prepareSavedLoad,
-    onRestore: restore,
+    onRestore: restoreSavedConversationState,
     onError: setError,
   });
   useEffect(
@@ -164,7 +167,10 @@ export function useWorkspaceSession({
     }
   }
 
-  async function generate(input: Submission, optimisticUserId?: string) {
+  async function startAndConsumeSavedSvgGeneration(
+    submission: Submission,
+    optimisticUserMessageId?: string,
+  ) {
     if (activeRequest.current) return;
     const controller = new AbortController();
     activeRequest.current = controller;
@@ -184,7 +190,7 @@ export function useWorkspaceSession({
         runStatus: "running",
       },
     ]);
-    setRetryInput(input);
+    setRetryInput(submission);
     setRetryAvailableAt(0);
     setIsLoading(true);
     setProgress(null);
@@ -196,54 +202,58 @@ export function useWorkspaceSession({
       CLIENT_GENERATION_TIMEOUT_MS,
     );
     try {
-      await requestGeneration(input, controller.signal, (event) => {
-        if (activeRequest.current !== controller) return;
-        if (event.type === "started") {
-          accepted = true;
-          revision.current = event.revision;
-          const oldReplyId = replyId;
-          replyId = event.assistantMessageId;
+      await requestSavedSvgGenerationOnClient({
+        submission,
+        signal: controller.signal,
+        onGenerationEvent: (event) => {
+          if (activeRequest.current !== controller) return;
+          if (event.type === "started") {
+            accepted = true;
+            revision.current = event.revision;
+            const oldReplyId = replyId;
+            replyId = event.assistantMessageId;
+            setMessages((previous) =>
+              previous.map((message) =>
+                message.id === oldReplyId
+                  ? { ...message, id: replyId }
+                  : message.id === optimisticUserMessageId
+                    ? { ...message, id: event.userMessageId }
+                    : message,
+              ),
+            );
+            setActivity("Checking your request…");
+            return;
+          }
           setMessages((previous) =>
             previous.map((message) =>
-              message.id === oldReplyId
-                ? { ...message, id: replyId }
-                : message.id === optimisticUserId
-                  ? { ...message, id: event.userMessageId }
-                  : message,
+              message.id === replyId ? applyEvent(message, event) : message,
             ),
           );
-          setActivity("Checking your request…");
-          return;
-        }
-        setMessages((previous) =>
-          previous.map((message) =>
-            message.id === replyId ? applyEvent(message, event) : message,
-          ),
-        );
-        if (event.type === "preview")
-          setPreview({
-            name: "draft.svg",
-            description: "SVG in progress",
-            ...event.svg,
-          });
-        if (event.type === "activity")
-          setActivity(
-            `Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
-          );
-        if (event.type === "progress") {
-          setProgress(event.characters);
-        }
-        if (event.type === "result") {
-          setDocument(event.document);
-          setPublicId(null);
-          setPreview(null);
-          setRetryInput(null);
-        }
-        if (event.type === "reply") setRetryInput(null);
-        if (event.type === "error") {
-          excluded = event.excludedFromContext ?? false;
-          if (event.retryable === false) setRetryInput(null);
-        }
+          if (event.type === "preview")
+            setPreview({
+              name: "draft.svg",
+              description: "SVG in progress",
+              ...event.svg,
+            });
+          if (event.type === "activity")
+            setActivity(
+              `Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
+            );
+          if (event.type === "progress") {
+            setProgress(event.characters);
+          }
+          if (event.type === "result") {
+            setDocument(event.document);
+            setPublicId(null);
+            setPreview(null);
+            setRetryInput(null);
+          }
+          if (event.type === "reply") setRetryInput(null);
+          if (event.type === "error") {
+            excluded = event.excludedFromContext ?? false;
+            if (event.retryable === false) setRetryInput(null);
+          }
+        },
       });
     } catch (error) {
       if (activeRequest.current !== controller) return;
@@ -265,10 +275,10 @@ export function useWorkspaceSession({
         setMessages((previous) =>
           previous.filter(
             (message) =>
-              message.id !== replyId && message.id !== optimisticUserId,
+              message.id !== replyId && message.id !== optimisticUserMessageId,
           ),
         );
-        if (input.kind === "message") setDraft(input.content);
+        if (submission.kind === "message") setDraft(submission.content);
       }
       if (error instanceof GenerationRequestError && error.status === 409) {
         setRetryInput(null);
@@ -281,12 +291,12 @@ export function useWorkspaceSession({
       if (activeRequest.current === controller) {
         // Refresh canonical IDs/details, including success if its last stream event was lost.
         try {
-          const page = await loadConversation(input.conversationId);
+          const page = await loadConversation(submission.conversationId);
           if (activeRequest.current === controller) {
-            restore(page, true);
+            restoreSavedConversationState(page, true);
             if (requestFailure) {
               setError(requestFailure);
-              if (input.kind === "message") setRetryInput(null);
+              if (submission.kind === "message") setRetryInput(null);
             }
           }
         } catch {
@@ -370,16 +380,19 @@ export function useWorkspaceSession({
       setDraft(trimmed);
       return;
     }
-    const userId = crypto.randomUUID();
+    const optimisticUserMessageId = crypto.randomUUID();
     setMessages((previous) => [
       ...previous.filter((message) => message.id !== "welcome"),
-      { id: userId, role: "user", content: trimmed },
+      { id: optimisticUserMessageId, role: "user", content: trimmed },
     ]);
-    void generate(parsed.data, userId);
+    void startAndConsumeSavedSvgGeneration(
+      parsed.data,
+      optimisticUserMessageId,
+    );
   }
   function retry() {
     if (!retryInput || Date.now() < retryAvailableAt) return;
-    void generate(
+    void startAndConsumeSavedSvgGeneration(
       retryInput.kind === "retry"
         ? { ...retryInput, expectedRevision: revision.current }
         : retryInput,
