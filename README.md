@@ -85,9 +85,13 @@ Restart the development server after changing settings.
 | `BRAINTRUST_FEEDBACK_SECRET`        | Signing secret of at least 32 characters for feedback permissions.                                 |
 | `EVAL_JUDGE_MODEL`                  | Eval judge selected with `--judge`; defaults to `gpt-6-luna`.                                      |
 
+Provider model defaults and policy/collection provider settings are defined in
+`lib/ai/config.ts`; generation deadlines, token limits and retries are in
+`lib/workspace/generation-limits.ts`.
+
 `OPENAI_MODEL` changes the drawing model only. Input policy separately uses
 `omni-moderation-latest` and the `gpt-6-luna` Decisions model configured in
-`lib/ai/input-policy.ts`. Collection description/embedding and evaluation judge
+`lib/ai/config.ts`. Collection description/embedding and evaluation judge
 models have their own settings. Check provider access and model output limits
 before changing models; the drawing cap is configured in
 `lib/workspace/generation-limits.ts`.

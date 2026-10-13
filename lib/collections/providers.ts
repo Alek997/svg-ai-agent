@@ -1,17 +1,19 @@
 import "server-only";
 import { openai } from "@ai-sdk/openai";
 import { generateText, Output, embedMany } from "ai";
+import { modelDefaults, collectionProviderConfig } from "../ai/config";
 import { descriptionSchema } from "./contracts";
 import { summarizeUsage } from "../ai/usage";
 export function collectionModels() {
   return {
     description:
-      process.env.COLLECTION_DESCRIPTION_MODEL?.trim() || "gpt-6-luna",
+      process.env.COLLECTION_DESCRIPTION_MODEL?.trim() ||
+      modelDefaults.collectionDescription,
     embedding:
       process.env.COLLECTION_EMBEDDING_MODEL?.trim() ||
-      "text-embedding-3-small",
-    dimensions: 1536,
-    version: "png-description-v3",
+      modelDefaults.collectionEmbedding,
+    dimensions: collectionProviderConfig.embeddingDimensions,
+    version: collectionProviderConfig.descriptionVersion,
   };
 }
 export const collectionProviders = {
@@ -28,11 +30,16 @@ export const collectionProviders = {
           content: [{ type: "image", image: png, mediaType: "image/png" }],
         },
       ],
-      maxOutputTokens: 300,
-      maxRetries: 0,
-      timeout: 30_000,
+      maxOutputTokens: collectionProviderConfig.maxDescriptionTokens,
+      maxRetries: collectionProviderConfig.maxRetries,
+      timeout: collectionProviderConfig.timeoutMs,
       abortSignal: signal,
-      providerOptions: { openai: { reasoningEffort: "none", store: false } },
+      providerOptions: {
+        openai: {
+          reasoningEffort: collectionProviderConfig.reasoningEffort,
+          store: false,
+        },
+      },
     });
     return {
       ...descriptionSchema.parse(result.output),
@@ -44,9 +51,12 @@ export const collectionProviders = {
     const result = await embedMany({
       model: openai.embedding(config.embedding),
       values,
-      maxRetries: 0,
-      maxParallelCalls: 1,
-      abortSignal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+      maxRetries: collectionProviderConfig.maxRetries,
+      maxParallelCalls: collectionProviderConfig.maxParallelEmbeddingCalls,
+      abortSignal: AbortSignal.any([
+        signal,
+        AbortSignal.timeout(collectionProviderConfig.timeoutMs),
+      ]),
       providerOptions: { openai: { dimensions: config.dimensions } },
     });
     return {

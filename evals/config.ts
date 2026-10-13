@@ -8,5 +8,6 @@ export const evalConfig = {
     imageSize: 512,
     timeoutMs: 60_000,
     maxOutputTokens: 2000,
+    maxRetries: 0,
   },
 };

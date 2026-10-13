@@ -6,6 +6,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import type { GenerationRequest } from "../workspace/contracts";
+import { modelDefaults, policyConfig } from "./config";
 import { getOpenAIKey, getOpenAIProvider } from "./model";
 import {
   getConversationReply,
@@ -13,8 +14,8 @@ import {
   replyLanguageSchema,
 } from "./conversation-replies";
 
-export const POLICY_TIMEOUT_MS = 15_000;
-export const SCOPE_MODEL = "gpt-6-luna";
+export const POLICY_TIMEOUT_MS: number = policyConfig.timeoutMs;
+export const SCOPE_MODEL = modelDefaults.scope;
 
 export class InputPolicyError extends Error {
   constructor(
@@ -43,7 +44,9 @@ export function buildPolicyState(input: GenerationRequest) {
   return {
     latestRequest: input.messages.at(-1)!.content,
     // Context helps resolve "make it blue". It is not proof of earlier approval.
-    untrustedContext: input.messages.slice(0, -1).slice(-4),
+    untrustedContext: input.messages
+      .slice(0, -1)
+      .slice(-policyConfig.contextMessages),
     hasCurrentArtwork: Boolean(input.currentSvg),
   };
 }
@@ -75,7 +78,7 @@ export async function checkSvgScope(
     model,
     state: buildPolicyState(input),
     abortSignal: signal,
-    maxRetries: 0,
+    maxRetries: policyConfig.maxRetries,
     questions: {
       scope: {
         type: "choice",
@@ -191,7 +194,7 @@ export async function moderateUserHistory(
       Authorization: `Bearer ${getOpenAIKey()}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model: "omni-moderation-latest", input: text }),
+    body: JSON.stringify({ model: modelDefaults.moderation, input: text }),
   });
   if (!response.ok) throw new Error("Moderation unavailable");
   // Bound provider response memory and reject malformed/partial moderation results.
@@ -205,7 +208,8 @@ export async function moderateUserHistory(
       const { value, done } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > 32_000) throw new Error("Moderation response exceeded limit");
+      if (bytes > policyConfig.maxResponseBytes)
+        throw new Error("Moderation response exceeded limit");
       body += decoder.decode(value, { stream: true });
     }
     body += decoder.decode();

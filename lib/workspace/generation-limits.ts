@@ -7,3 +7,6 @@ export const CLIENT_GENERATION_TIMEOUT_MS = GENERATION_TIMEOUT_MS + 10_000;
 // Leave room for a complete SVG tool argument while bounding each model call.
 export const MAX_OUTPUT_TOKENS = 32_768;
 export const MAX_PROVIDER_RETRIES = 2;
+
+export const MAX_AGENT_STEPS = 6;
+export const MAX_STREAM_OUTPUT_CHARACTERS = 384_000;

@@ -9,6 +9,7 @@ import {
 } from "../workspace/contracts";
 
 export const MAX_SEARCH_CALLS = 2;
+const SEARCH_TIMEOUT_MS = 10_000;
 const MAX_SEARCH_BYTES = 100_000;
 const responseSchema = z.object({
   results: z.array(
@@ -43,7 +44,7 @@ async function readBoundedJson(response: Response) {
 export function createWebSearch({
   apiKey = process.env.TAVILY_API_KEY,
   fetcher = fetch,
-  timeoutMs = 10_000,
+  timeoutMs = SEARCH_TIMEOUT_MS,
 }: { apiKey?: string; fetcher?: typeof fetch; timeoutMs?: number } = {}) {
   let attempts = 0;
   return {

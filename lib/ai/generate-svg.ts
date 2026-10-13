@@ -1,4 +1,5 @@
 import "server-only";
+import { MAX_STREAM_OUTPUT_CHARACTERS } from "../workspace/generation-limits";
 import type { Retrieval } from "../collections/contracts";
 
 import type { LanguageModel } from "ai";
@@ -216,7 +217,8 @@ export async function streamSvgGenerationOnServer({
         detail: { step, status: "completed", description },
       });
     }
-    if (characters > 384_000) throw new Error("Output limit exceeded");
+    if (characters > MAX_STREAM_OUTPUT_CHARACTERS)
+      throw new Error("Output limit exceeded");
   }
   const metadata = await result.output;
   const svg = agent.getLatestValidatedSvgProposal();

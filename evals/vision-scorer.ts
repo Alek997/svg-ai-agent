@@ -101,7 +101,7 @@ export function createVisionScorer(
       ],
       output: Output.object({ schema: judgmentSchema }),
       maxOutputTokens: evalConfig.judge.maxOutputTokens,
-      maxRetries: 0,
+      maxRetries: evalConfig.judge.maxRetries,
       timeout: evalConfig.judge.timeoutMs,
       providerOptions: { openai: { store: false } },
     });

@@ -2,9 +2,10 @@ import "server-only";
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
+import { modelDefaults } from "./config";
 import { ModelConfigurationError } from "./errors";
 
-export const DEFAULT_OPENAI_MODEL = "gpt-6-luna";
+export const DEFAULT_OPENAI_MODEL = modelDefaults.drawing;
 
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),

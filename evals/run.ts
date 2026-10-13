@@ -7,7 +7,8 @@ import { resolve } from "node:path";
 import { createOpenAI } from "@ai-sdk/openai";
 import { registerTelemetry } from "ai";
 import { Eval, braintrustAISDKTelemetry, type EvalScorer } from "braintrust";
-import { DEFAULT_OPENAI_MODEL, getLLM } from "../lib/ai/model";
+import { modelDefaults } from "../lib/ai/config";
+import { getLLM } from "../lib/ai/model";
 import { evalConfig } from "./config";
 import {
   datasetSchema,
@@ -77,7 +78,7 @@ async function main() {
   if (values.braintrust) registerTelemetry(braintrustAISDKTelemetry());
   const model = getLLM();
   const judgeModel =
-    process.env.EVAL_JUDGE_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
+    process.env.EVAL_JUDGE_MODEL?.trim() || modelDefaults.evalJudge;
   const scorers = [...basicScorers];
   if (values.judge)
     scorers.push(
