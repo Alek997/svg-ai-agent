@@ -24,6 +24,7 @@ import type { withDatabase } from "../../lib/db/client";
 import type { CollectionProviders } from "../../lib/collections/providers";
 import type { ServerSvgGenerator } from "../../lib/ai/handle-generation";
 import type { Retrieval } from "../../lib/collections/contracts";
+
 const connectionString = process.env.TEST_DATABASE_URL;
 if (
   !connectionString ||

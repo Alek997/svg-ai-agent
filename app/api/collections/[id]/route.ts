@@ -7,6 +7,7 @@ import {
   conversationErrorResponse,
 } from "@/lib/conversations/http";
 import { ConversationError } from "@/lib/conversations/store";
+
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
 async function owner(context: Context) {

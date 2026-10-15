@@ -32,6 +32,7 @@ import {
 } from "./contracts";
 import { withoutReferenceSources } from "../collections/evidence";
 import { ConversationError } from "./errors";
+
 export { ConversationError } from "./errors";
 import { finishDetails, selectContext } from "./state";
 

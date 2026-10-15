@@ -473,6 +473,7 @@ import { createCollectionStore } from "../../lib/collections/store";
 import { createCollectionProcessor } from "../../lib/collections/process";
 import { createOwnedCollectionReferenceRetriever } from "../../lib/collections/retrieval";
 import type { CollectionProviders } from "../../lib/collections/providers";
+
 const collectionStore = createCollectionStore(runDatabase);
 const ragStore = createConversationStore(runDatabase, async () => {});
 const vector = [1, ...Array(1535).fill(0)];

@@ -4,6 +4,7 @@ import { generateText, Output, embedMany } from "ai";
 import { modelDefaults, collectionProviderConfig } from "../ai/config";
 import { descriptionSchema } from "./contracts";
 import { summarizeUsage } from "../ai/usage";
+
 export function collectionModels() {
   return {
     description:

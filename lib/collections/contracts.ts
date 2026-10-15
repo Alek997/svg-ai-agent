@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { safeSvgSchema } from "../svg/validate-svg";
+
 export const COLLECTION_LIMITS = {
   collections: 5,
   icons: 200,

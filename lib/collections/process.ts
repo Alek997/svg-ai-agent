@@ -11,6 +11,7 @@ import {
 } from "./providers";
 import { renderSvg } from "../svg/render-svg";
 import { descriptionSchema, COLLECTION_LIMITS as limits } from "./contracts";
+
 export function validateEmbedding(vector: number[]) {
   if (
     vector.length !== 1536 ||

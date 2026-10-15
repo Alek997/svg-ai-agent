@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import type { CollectionSummary } from "@/lib/collections/contracts";
 import { collectionRequest } from "./client";
+
 export function WorkspaceCollections({
   conversationId,
   hasArtwork,

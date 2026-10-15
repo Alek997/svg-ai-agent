@@ -14,6 +14,7 @@ import {
 import { buildSvgAgentMessages } from "../lib/ai/svg-agent";
 import { renderSvg } from "../lib/svg/render-svg";
 import sharp from "sharp";
+
 const source =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>';
 test("RAG capability is default-off and requires the exact array entry", () => {

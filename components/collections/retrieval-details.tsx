@@ -1,6 +1,7 @@
 "use client";
 import type { Retrieval } from "@/lib/collections/contracts";
 import { SvgImage } from "./svg-image";
+
 export function RetrievalDetails({ detail }: { detail: Retrieval }) {
   return (
     <div className="space-y-3 text-xs text-stone-600">

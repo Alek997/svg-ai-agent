@@ -3,6 +3,7 @@
 import { createServer } from "node:http";
 import { build } from "esbuild";
 import { readFile } from "node:fs/promises";
+
 const bundle = await build({
   entryPoints: ["tests/browser/effects-client.tsx"],
   bundle: true,

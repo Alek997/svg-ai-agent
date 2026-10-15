@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { CollectionManager } from "../../components/collections/collection-manager";
 import { SvgWorkspace } from "../../components/workspace/svg-workspace";
 import { usePathname } from "./navigation";
+
 function Fixture() {
   const pathname = usePathname();
   return (

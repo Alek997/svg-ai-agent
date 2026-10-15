@@ -1,6 +1,7 @@
 import "server-only";
 import sharp from "sharp";
 import { safeSvgSchema } from "./validate-svg";
+
 // Used by ingestion and evaluations; no raster asset is persisted.
 export async function renderSvg(source: string, size = 256): Promise<Buffer> {
   if (!Number.isInteger(size) || size < 1 || size > 1024)

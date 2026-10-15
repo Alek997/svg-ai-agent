@@ -10,6 +10,7 @@ import {
   conversationErrorResponse,
 } from "@/lib/conversations/http";
 import { ConversationError } from "@/lib/conversations/store";
+
 export const runtime = "nodejs";
 export const maxDuration = 240;
 const uuid = z.string().uuid();

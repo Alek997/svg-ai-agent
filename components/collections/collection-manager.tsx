@@ -7,6 +7,7 @@ import {
   collectionButton as button,
 } from "./collection-forms";
 import { SelectedCollection, type CollectionPage } from "./selected-collection";
+
 export function CollectionManager() {
   const [collections, setCollections] = useState<CollectionSummary[]>([]);
   const [selection, setSelection] = useState<{

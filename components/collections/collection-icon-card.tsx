@@ -1,6 +1,7 @@
 import type { CollectionIcon } from "@/lib/collections/contracts";
 import { SvgImage } from "./svg-image";
 import { collectionButton as button } from "./collection-forms";
+
 export function CollectionIconCard({
   icon,
   disabled,

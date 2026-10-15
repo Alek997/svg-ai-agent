@@ -1,5 +1,6 @@
 // Browser-fixture adapter only. Production uses next/navigation.
 import { useSyncExternalStore } from "react";
+
 export function usePathname() {
   return useSyncExternalStore(
     (callback) => {

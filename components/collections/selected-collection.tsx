@@ -8,6 +8,7 @@ import {
   type Act,
 } from "./collection-forms";
 import { CollectionIconCard } from "./collection-icon-card";
+
 export type CollectionPage = {
   collection: { id: string; name: string };
   icons: CollectionIcon[];

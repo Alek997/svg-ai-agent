@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element -- Blob URLs use the restricted SVG image renderer. */
 "use client";
 import { useSvgBlobRef } from "@/lib/workspace/use-svg-blob-ref";
+
 export function SvgImage({ source, label }: { source: string; label: string }) {
   const image = useSvgBlobRef<HTMLImageElement>(source, "src");
   // Server-validated SVG in the browser's restricted image renderer.

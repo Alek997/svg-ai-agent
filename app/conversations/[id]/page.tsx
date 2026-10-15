@@ -5,6 +5,7 @@ import { SvgWorkspace } from "@/components/workspace/svg-workspace";
 import { conversationIdSchema } from "@/lib/conversations/contracts";
 import { ragEnabled } from "@/lib/collections/access";
 import { trackingEnabled } from "@/lib/ai/tracking";
+
 export default async function Conversation({
   params,
 }: {

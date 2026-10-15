@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Retrieval } from "@/lib/collections/contracts";
 import { collectionRequest } from "./client";
 import { RetrievalDetails } from "./retrieval-details";
+
 export const collectionButton =
   "rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm disabled:opacity-40";
 export type Act = (action: () => Promise<void>) => Promise<boolean>;
