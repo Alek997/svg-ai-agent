@@ -55,3 +55,12 @@ Verification: all 188 unit tests, TypeScript, lint, formatting, the isolated bro
 regression suite, and the Webpack production build passed. The default Turbopack
 build could not fetch Google Fonts. Database integration tests and live provider
 calls were not run.
+
+Ideje za improv:
+
+- dodaj tool koji ce da menja postojeci svg umesto da ga svaki put rekreira od nule
+- dodaj da umesto opisa svga ili samo koda, model moze d avidi i screenshot ili generisan png kako bi bolje znao sta tacno radi. To moze da bude tool koji ce model moci da pokrene kad god hoce. (razmotri da mozda moze da bude i client side tool -ako to ima smisla)
+
+- napravi mozda ci/cd za pokretanje eval-a pre svakog mrdza pa ako rezultat nije pozitivan ili isti da se odbija mrdz, dodaj da je lako moguce da izbegnes run (da ga ne pokreces svaki put, ali da pokazes da moze)
+
+za oba toola prvo uradi eval run pre pa eval run posle kako bi znao da li je pozitivna ili negativna promena
