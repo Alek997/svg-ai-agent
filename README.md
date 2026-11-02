@@ -247,20 +247,19 @@ retention are configured separately. App logging and eval uploads are independen
 
 ## Project structure
 
-| Path                     | Responsibility                                                                                       |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `app/`                   | Workspace, auth, gallery, collections and public pages; API Route Handlers; layout/styles/app icons. |
-| `components/`            | Interactive workspace, collections, public view and shared UI.                                       |
-| `lib/ai/`                | Model configuration, input policy, drawing tools/streaming, tracking and feedback.                   |
-| `lib/conversations/`     | Owned persistence, revisions, claims, checkpointing and client contracts.                            |
-| `lib/collections/`       | Capability checks, ingestion, quotas, embeddings and hybrid retrieval.                               |
-| `lib/db/` and `drizzle/` | Database client/schema and committed migrations/metadata.                                            |
-| `lib/svg/`               | XML validation, progressive snapshots, safe rasterization and public-result reads.                   |
-| `lib/workspace/`         | Shared generation contracts, limits, stream reader and UI state helpers.                             |
-| `evals/`                 | Dataset, evaluation runner, deterministic scorers and optional vision judge.                         |
-| `evaluations/`           | Saved baseline artifacts; generated runs under `runs/` are ignored by Git.                           |
-| `tests/`                 | Mocked unit tests, disposable-database integration tests and browser fixtures.                       |
-| `proxy.ts`               | Clerk session initialization; resource routes enforce their own authorization.                       |
+| Path                     | Responsibility                                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `app/`                   | Workspace, auth, gallery, collections and public pages; API Route Handlers; layout/styles/app icons.    |
+| `components/`            | Interactive workspace, collections, public view and shared UI.                                          |
+| `lib/ai/`                | Model configuration, input policy, drawing tools/streaming, tracking and feedback.                      |
+| `lib/conversations/`     | Owned persistence, revisions, claims, checkpointing and client contracts.                               |
+| `lib/collections/`       | Capability checks, ingestion, quotas, embeddings and hybrid retrieval.                                  |
+| `lib/db/` and `drizzle/` | Database client/schema and committed migrations/metadata.                                               |
+| `lib/svg/`               | XML validation, progressive snapshots, safe rasterization and public-result reads.                      |
+| `lib/workspace/`         | Shared generation contracts, limits, stream reader and UI state helpers.                                |
+| `evals/`                 | Dataset, runner, scorers and vision judge; saved artifacts in `baselines/`, ignored outputs in `runs/`. |
+| `tests/`                 | Mocked unit tests, disposable-database integration tests and browser fixtures.                          |
+| `proxy.ts`               | Clerk session initialization; resource routes enforce their own authorization.                          |
 
 `next.config.ts` keeps `ws` external on the server for the Neon driver's native
 optional-module loading. No transaction stays open during model generation.

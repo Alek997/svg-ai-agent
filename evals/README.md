@@ -4,6 +4,9 @@ An eval is a repeatable experiment: run the same requests through the applicatio
 measure the results, and compare them after changing a model or prompt. This is
 an evaluation dataset, not training data. It does not change model weights.
 
+Evaluation code and artifacts live here: `baselines/` contains committed historical
+evidence, while `runs/` contains local generated results and is ignored by Git.
+
 ## Start here
 
 ```bash
@@ -156,7 +159,7 @@ not instrumented by this setup. Check the first live experiment before relying
 on span completeness; automated verification uses a mock provider.
 
 Every finished run saves `results.json` and accepted SVGs under
-`evaluations/runs/<timestamp>/`, ignored by Git. JSON contains per-case scores,
+`evals/runs/<timestamp>/`, ignored by Git. JSON contains per-case scores,
 judge evidence/usage, generation usage/timing, and the Braintrust experiment URL
 when available. A nonzero exit code flags failures, unavailable scores, or any
 score below 1. This is a strict review signal, not a production quality threshold.

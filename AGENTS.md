@@ -49,7 +49,8 @@ and private reference collections.
 - `lib/svg/`, `lib/workspace/`: SVG safety, snapshots, rasterization, contracts and
   client state/stream helpers.
 - `drizzle/`: SQL migrations and migration metadata. Never store database dumps here.
-- `evals/`, `evaluations/`, `tests/`: evaluation code/artifacts and test fixtures.
+- `evals/`: evaluation code, committed artifacts in `baselines/` and ignored output in `runs/`.
+- `tests/`: application and evaluation test fixtures.
 - Preserve the generated Next.js instruction block at the top of this file.
 
 ## Generation flow

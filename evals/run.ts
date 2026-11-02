@@ -110,19 +110,27 @@ async function main() {
     EvalCase,
     EvalOutput,
     EvalCase["expected"]
-  >[] = scorers.map((scorer) => async ({ input, output }) => {
-    let score: Score;
-    try {
-      score = await scorer.run(input, output);
-    } catch {
-      score = {
-        name: scorer.name,
-        score: null,
-        metadata: { needsReview: true, reason: "Scorer failed." },
-      };
-    }
-    (details[input.id] ??= []).push(score);
-    return score;
+  >[] = scorers.map((scorer) => {
+    const adapter: EvalScorer<
+      EvalCase,
+      EvalOutput,
+      EvalCase["expected"]
+    > = async ({ input, output }) => {
+      let score: Score;
+      try {
+        score = await scorer.run(input, output);
+      } catch {
+        score = {
+          name: scorer.name,
+          score: null,
+          metadata: { needsReview: true, reason: "Scorer failed." },
+        };
+      }
+      (details[input.id] ??= []).push(score);
+      return score;
+    };
+    // Braintrust uses the function name for its trace span, not the returned score name.
+    return Object.defineProperty(adapter, "name", { value: scorer.name });
   });
   console.log(
     `Running one generation per case, sequentially. Braintrust upload: ${values.braintrust}. Vision judge: ${values.judge}.`,
@@ -147,7 +155,7 @@ async function main() {
     { noSendLogs: !values.braintrust },
   );
   // Use a generated safe directory name; user experiment labels never become paths.
-  const directory = resolve("evaluations/runs", stamp);
+  const directory = resolve("evals/runs", stamp);
   await mkdir(directory, { recursive: true });
   await writeFile(
     resolve(directory, "results.json"),

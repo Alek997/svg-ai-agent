@@ -15,4 +15,4 @@ next-env.d.ts
 !.env.example
 *.pem
 test-data/
-evaluations/runs/
+evals/runs/
