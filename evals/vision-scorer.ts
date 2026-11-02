@@ -1,4 +1,5 @@
 import "server-only";
+import sharp from "sharp";
 import { generateText, Output, type LanguageModel } from "ai";
 import { renderSvg as renderSafeSvg } from "../lib/svg/render-svg";
 import { z } from "zod";
@@ -27,7 +28,13 @@ export const judgmentSchema = z
 
 // Validate before handing untrusted XML to a renderer. Bound raster size too.
 export async function renderSvg(source: string): Promise<Buffer> {
-  return renderSafeSvg(source, evalConfig.judge.imageSize);
+  const png = await renderSafeSvg(source, evalConfig.judge.imageSize);
+  // Bake in the backdrop promised by judgePrompt. Transparent black artwork
+  // otherwise disappears when an image consumer composites it against black.
+  return sharp(png)
+    .flatten({ background: evalConfig.judge.background })
+    .png()
+    .toBuffer();
 }
 
 export function scoreJudgment(requirements: string[], raw: unknown): Score {
@@ -147,6 +154,7 @@ export function createVisionScorer(
             ...result.metadata,
             durationMs: Math.round(performance.now() - start),
             rubricVersion: evalConfig.judge.rubricVersion,
+            renderingVersion: evalConfig.judge.renderingVersion,
           },
         };
       } catch {

@@ -99,6 +99,7 @@ async function main() {
     datasetHash: hash(datasetText),
     agentHash: hash(await readFile("lib/ai/svg-agent.ts", "utf8")),
     judgePromptHash: hash(await readFile("evals/judge-prompt.ts", "utf8")),
+    rendererHash: hash(await readFile("lib/svg/render-svg.ts", "utf8")),
     scorerHash: hash(
       (await readFile("evals/scorers.ts", "utf8")) +
         (await readFile("evals/vision-scorer.ts", "utf8")),

@@ -5,6 +5,8 @@ export const evalConfig = {
   maxCases: 20,
   judge: {
     rubricVersion: "visual-checklist-v1",
+    renderingVersion: "opaque-gray-v2",
+    background: "#e5e7eb",
     imageSize: 512,
     timeoutMs: 60_000,
     maxOutputTokens: 2000,

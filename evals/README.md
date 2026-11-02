@@ -119,15 +119,21 @@ Add focused mocked tests for important new scoring behavior.
 ### The visual scorer
 
 `vision-scorer.ts` validates SVG before rendering it with Sharp. It produces a
-512×512 PNG using the shared `lib/svg/render-svg.ts` renderer. It preserves SVG
-transparency with transparent padding, then sends the image and requirements to an
+512×512 PNG using the shared `lib/svg/render-svg.ts` renderer, then flattens the
+judge image onto an opaque light gray (`#e5e7eb`) backdrop, including resize padding.
+This keeps black and white artwork visible without relying on the image service's
+handling of transparency. The shared renderer and saved SVG retain transparency.
+It sends the opaque image and requirements to an
 image-capable model and requests structured verdicts. Edits include two images:
 result first, starting artwork second. The assistant's explanation and SVG source
 are not given to the judge as evidence.
 
 Edit `judge-prompt.ts` to adjust the judge instructions. Edit `config.ts` for
 image size, timeout, and output token limits. Change `rubricVersion` when you
-change the scoring rules. Each checklist verdict contains its index and brief
+change the scoring rules. `renderingVersion: opaque-gray-v2` identifies the explicit
+judge backdrop; older runs sent transparent images despite the judge prompt
+describing a gray backdrop. Re-establish the baseline before comparing scores
+across these rendering versions. Each checklist verdict contains its index and brief
 visible evidence. Code verifies that every index appears exactly once and
 calculates the score; the judge does not invent the final percentage.
 
@@ -138,9 +144,8 @@ there is no accepted artwork to evaluate. Review null counts alongside averages:
 missing scores are not passes and may be omitted from Braintrust averages.
 
 Vision judgment can be wrong, especially for counting, perspective, subtle edits,
-and transparency. How the image service displays transparent pixels can affect
-white or pale artwork visibility; a vision verdict cannot establish an exact
-transparency contract. Use an XML/alpha check for that property. Judge agreement must
+and transparency. The opaque judge image cannot establish an exact transparency
+contract. Use an XML/alpha check on the original SVG/render for that property. Judge agreement must
 be checked against a small human-labeled sample, including intentionally wrong
 drawings. Do not use uncalibrated scores as deployment gates.
 
@@ -175,10 +180,10 @@ from quality. One trial is a smoke evaluation; use repeated runs before claiming
 a small difference is a reliable improvement.
 
 The runner records the configuration and hashes of the dataset, agent file,
-scorer files, and judge prompt. These make changed inputs/settings visible; Git
+scorer files, shared renderer, and judge prompt. These make changed inputs/settings visible; Git
 history remains the source for retrieving the corresponding code. The shared
-renderer is not separately hashed or versioned by the runner. Record the code
-revision and rendering settings with each experiment; runs produced with different
+renderer hash and judge rendering version/background are recorded by the runner.
+Record the code revision with each experiment; runs produced with different
 backdrops or renderers are not identical evaluation settings. Version future
 rendering/scoring changes explicitly. Maintain a
 small held-out set of cases you do not use while tuning prompts to reduce overfitting.

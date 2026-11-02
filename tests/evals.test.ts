@@ -224,6 +224,41 @@ test("renderer rejects unsafe SVG and produces bounded PNGs", async () => {
   assert.equal(metadata.format, "png");
   assert.equal(metadata.width, 512);
   assert.equal(metadata.height, 512);
+  assert.equal(metadata.hasAlpha, false);
+});
+
+test("judge renderer keeps black outlines visible on an opaque gray backdrop", async () => {
+  const source =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="218" cy="218" r="132" fill="none" stroke="#000000" stroke-width="24"/><line x1="313" y1="313" x2="427" y2="427" stroke="#000000" stroke-width="30" stroke-linecap="round"/></svg>';
+  const png = await renderSvg(source);
+  const { data, info } = await sharp(png)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const pixel = (x: number, y: number) => {
+    const offset = (y * info.width + x) * info.channels;
+    return [...data.subarray(offset, offset + info.channels)];
+  };
+  assert.equal(info.channels, 3);
+  assert.deepEqual(pixel(0, 0), [229, 231, 235]);
+  assert.deepEqual(pixel(218, 218), [229, 231, 235]);
+  assert.deepEqual(pixel(218, 86), [0, 0, 0]);
+  assert.deepEqual(pixel(400, 400), [0, 0, 0]);
+});
+
+test("judge backdrop fills resize padding and preserves white artwork and explicit backgrounds", async () => {
+  const png = await renderSvg(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="100" height="100" fill="white"/><rect x="100" width="100" height="100" fill="black"/></svg>',
+  );
+  const { data, info } = await sharp(png)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const pixel = (x: number, y: number) => {
+    const offset = (y * info.width + x) * info.channels;
+    return [...data.subarray(offset, offset + info.channels)];
+  };
+  assert.deepEqual(pixel(0, 0), [229, 231, 235]);
+  assert.deepEqual(pixel(128, 256), [255, 255, 255]);
+  assert.deepEqual(pixel(384, 256), [0, 0, 0]);
 });
 
 test("vision scorer supplies both images for edits, skips unsafe output and distinguishes judge failures", async () => {
@@ -231,6 +266,8 @@ test("vision scorer supplies both images for edits, skips unsafe output and dist
   const scorer = createVisionScorer("mock", async (item, images) => {
     calls++;
     assert.equal(images.length, 2);
+    for (const image of images)
+      assert.equal((await sharp(image).metadata()).hasAlpha, false);
     return {
       judgment: {
         checks: item.expected.requirements.map((_, index) => ({
