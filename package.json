@@ -14,6 +14,8 @@
     "precommit": "lint-staged",
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
     "eval": "node --conditions=react-server --import tsx evals/run.ts",
+    "eval:review": "node --conditions=react-server --import tsx evals/review.ts",
+    "eval:reviews:sync": "node --conditions=react-server --import tsx evals/sync-human-reviews.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test:db": "node --conditions=react-server --import tsx --test tests/integration/*.test.ts",
@@ -53,6 +55,7 @@
     "prettier": "3.7.4",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yaml": "2.9.1"
   }
 }

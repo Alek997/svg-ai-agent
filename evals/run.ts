@@ -19,6 +19,7 @@ import {
 import { createEvalTask } from "./task";
 import { basicScorers } from "./scorers";
 import { createVisionScorer } from "./vision-scorer";
+import { prepareReview } from "./review-artifacts";
 
 class EvalSetupError extends Error {}
 
@@ -94,6 +95,7 @@ async function main() {
     createHash("sha256").update(text).digest("hex");
   const metadata = {
     ...evalConfig,
+    braintrustUpload: values.braintrust,
     generatorModel: typeof model === "string" ? model : model.modelId,
     judgeModel: values.judge ? judgeModel : null,
     datasetHash: hash(datasetText),
@@ -147,7 +149,15 @@ async function main() {
         metadata: { caseId: item.id },
       })),
       task: createEvalTask(model),
-      scores: scoreAdapters,
+      scores: [
+        ...scoreAdapters,
+        function human_review() {
+          return [
+            { name: "human_visual_quality", score: null },
+            { name: "human_acceptable", score: null },
+          ];
+        },
+      ],
       metadata,
       maxConcurrency: 1,
       trialCount: 1,
@@ -180,6 +190,10 @@ async function main() {
     }
   }
   console.log(`Results saved to ${directory}`);
+  await prepareReview(directory);
+  console.log(
+    "Human review files prepared. Run npm run eval:review -- --serve to browse.",
+  );
   if (result.summary.experimentUrl)
     console.log(`Braintrust: ${result.summary.experimentUrl}`);
   if (
@@ -187,7 +201,11 @@ async function main() {
       (row) =>
         row.error ||
         row.output?.status !== "completed" ||
-        Object.values(row.scores).some((score) => score === null || score < 1),
+        Object.entries(row.scores).some(([name, score]) =>
+          ["human_visual_quality", "human_acceptable"].includes(name)
+            ? false // Human review is optional and happens after generation.
+            : score === null || score < 1,
+        ),
     )
   )
     process.exitCode = 1;

@@ -107,5 +107,361 @@
         "No background shape or additional objects"
       ]
     }
+  },
+  {
+    "id": "magnifying-glass-map",
+    "tags": [
+      "generation",
+      "hard",
+      "extended",
+      "spatial",
+      "layering",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a folded cream-colored map with two visible fold lines, a blue winding river, and a red location pin on the left half. Place a black outlined magnifying glass diagonally over the lower-right corner of the map. Its lens must have no fill so the river remains visible inside it. The handle points down and right. No text or background shape."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A recognizable cream-colored folded map",
+        "Two visible fold lines on the map",
+        "A blue winding river on the map",
+        "A red location pin on the left half of the map",
+        "A black outlined magnifying glass overlaps the lower-right corner of the map",
+        "The river is visible inside the magnifying glass lens",
+        "The magnifying glass handle points down and right",
+        "No text",
+        "No background shape behind the map and magnifying glass"
+      ]
+    }
+  },
+  {
+    "id": "folder-star-documents",
+    "tags": [
+      "generation",
+      "hard",
+      "extended",
+      "counting",
+      "layering",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a blue open folder with exactly three separate white document sheets sticking out above its front panel. Give the sheets red, yellow, and green header strips from left to right, with all three strips visible. Put one small white five-pointed star centered on the blue front panel. The documents sit behind the front panel, which hides their lower portions. No letters or background shape."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A recognizable blue open folder",
+        "Exactly three separate white document sheets protrude above the folder front",
+        "The left sheet has a visible red header strip",
+        "The middle sheet has a visible yellow header strip",
+        "The right sheet has a visible green header strip",
+        "The blue front panel occludes the lower portions of the document sheets",
+        "Exactly one small white five-pointed star is centered on the blue front panel",
+        "No letters",
+        "No background shape behind the folder"
+      ]
+    }
+  },
+  {
+    "id": "weather-mixed-precipitation",
+    "tags": [
+      "generation",
+      "hard",
+      "extended",
+      "counting",
+      "spatial",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a circular weather badge. A yellow sun is partly hidden behind the upper-left side of a white cloud. Below the cloud, arrange exactly five precipitation symbols in one row: blue raindrop, blue raindrop, yellow lightning bolt, blue raindrop, blue raindrop. Keep all five symbols separate and inside the circular border. No text."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A circular border encloses the weather scene",
+        "A yellow sun is partly hidden behind the upper-left side of a white cloud",
+        "Exactly four blue raindrops",
+        "Exactly one yellow lightning bolt",
+        "The five precipitation symbols form a single row below the cloud",
+        "Two raindrops are to the left of the lightning bolt",
+        "Two raindrops are to the right of the lightning bolt",
+        "The five precipitation symbols do not touch one another",
+        "All weather objects are inside the circular border",
+        "No text"
+      ]
+    }
+  },
+  {
+    "id": "truck-loading-scene",
+    "tags": [
+      "generation",
+      "hard",
+      "extended",
+      "counting",
+      "spatial",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a side-view delivery truck facing right, with a blue cargo box, a white lightning bolt centered on the box, a white cab, and exactly two visible black wheels with gray hubs. Behind the truck, to its left, place exactly three brown parcels in a stack: two parcels on the ground and a third resting centered on top of them. Keep the stack separate from the truck. Each parcel has one red vertical tape stripe. No text or background shape."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A recognizable side-view delivery truck faces right",
+        "The cargo box is blue",
+        "A white lightning bolt is centered on the cargo box",
+        "The cab is white",
+        "Exactly two visible black truck wheels with gray hubs",
+        "Exactly three brown parcels are to the left of the truck",
+        "Two parcels form the bottom row and the third rests centered above them",
+        "The parcel stack does not overlap the truck",
+        "Each of the three parcels has one red vertical tape stripe",
+        "No text",
+        "No background shape behind the truck and parcels"
+      ]
+    }
+  },
+  {
+    "id": "bicycle-frame",
+    "tags": ["generation", "hard", "structure", "spatial", "challenge"],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a clean side-view bicycle facing right. Use two equally sized black wheels with visible spokes, a red diamond-shaped frame forming two adjoining triangles, a black saddle above the rear half of the frame, and a handlebar above the front wheel. The front fork connects the handlebar stem to the right wheel hub. Show a crank with two opposed pedals near the bottom middle of the frame. No rider, text, or background shape."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "A recognizable side-view bicycle faces right",
+        "Exactly two equally sized black wheels",
+        "Visible spokes connect each wheel hub to its rim",
+        "A red frame forms two adjoining triangles between the wheels",
+        "A black saddle is above the rear half of the frame",
+        "A handlebar is above the right wheel",
+        "A front fork visibly connects the handlebar stem to the right wheel hub",
+        "A crank with two opposed pedals is near the bottom middle of the frame",
+        "No rider",
+        "No text or background shape"
+      ]
+    }
+  },
+  {
+    "id": "branching-flowchart",
+    "tags": [
+      "generation",
+      "hard",
+      "diagram",
+      "spatial",
+      "counting",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a flowchart with exactly five nodes. A blue circle at the top center points down to an orange diamond in the center. The diamond branches left to a green square and right to a red square. Both squares point down toward one shared purple circle at the bottom center. Use black connectors with arrowheads at their destinations. Keep connectors outside node interiors except where they meet node boundaries. No text or additional arrows."
+        }
+      ]
+    },
+    "expected": {
+      "requirements": [
+        "Exactly five nodes",
+        "A blue circle is at the top center",
+        "An orange diamond is below the blue circle",
+        "A green square is to the left of the diamond",
+        "A red square is to the right of the diamond",
+        "A purple circle is at the bottom center",
+        "A black arrow points from the blue circle to the diamond",
+        "A black arrow points from the diamond to the green square",
+        "A black arrow points from the diamond to the red square",
+        "A black arrow points from the green square to the purple circle",
+        "A black arrow points from the red square to the purple circle",
+        "Connectors do not pass through node interiors",
+        "No text or additional arrows"
+      ]
+    }
+  },
+  {
+    "id": "edit-truck-cargo-only",
+    "tags": [
+      "edit",
+      "hard",
+      "preservation",
+      "recolor",
+      "extended",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a right-facing blue delivery truck with a white lightning bolt, white cab, pale blue window, dark chassis, and two black wheels with gray hubs."
+        },
+        {
+          "role": "assistant",
+          "content": "Created the requested artwork."
+        },
+        {
+          "role": "user",
+          "content": "Change only the blue cargo box to green. Preserve the white lightning bolt, white cab, pale blue window, chassis, and both wheels exactly in appearance, position, and size. Keep the cargo box position and shape unchanged. Add no objects or background."
+        }
+      ],
+      "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 180\"><rect x=\"35\" y=\"40\" width=\"160\" height=\"90\" rx=\"6\" fill=\"#2563eb\"/><path d=\"M122 52 94 88h23l-9 30 37-44h-25z\" fill=\"white\"/><path d=\"M195 70h48l32 35v25h-80z\" fill=\"white\" stroke=\"#111827\" stroke-width=\"4\"/><path d=\"M210 79h27l22 25h-49z\" fill=\"#93c5fd\"/><rect x=\"24\" y=\"126\" width=\"260\" height=\"10\" rx=\"3\" fill=\"#374151\"/><circle cx=\"80\" cy=\"138\" r=\"22\" fill=\"#111827\"/><circle cx=\"80\" cy=\"138\" r=\"10\" fill=\"#9ca3af\"/><circle cx=\"240\" cy=\"138\" r=\"22\" fill=\"#111827\"/><circle cx=\"240\" cy=\"138\" r=\"10\" fill=\"#9ca3af\"/></svg>"
+    },
+    "expected": {
+      "requirements": [
+        "The cargo box is green",
+        "The cargo box retains its original position, size, and shape",
+        "The white lightning bolt is unchanged",
+        "The white cab is unchanged",
+        "The pale blue window is unchanged",
+        "The dark chassis is unchanged",
+        "Both wheels and their gray hubs are unchanged",
+        "No added objects or background shape"
+      ]
+    }
+  },
+  {
+    "id": "edit-weather-remove-middle",
+    "tags": [
+      "edit",
+      "hard",
+      "preservation",
+      "removal",
+      "counting",
+      "extended",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a circular weather icon with a yellow sun behind a white cloud and three blue raindrops in a row below."
+        },
+        {
+          "role": "assistant",
+          "content": "Created the requested artwork."
+        },
+        {
+          "role": "user",
+          "content": "Remove only the middle raindrop. Do not recenter or resize the two remaining drops. Preserve the sun, cloud, circular border, and all other artwork unchanged. Add nothing."
+        }
+      ],
+      "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 240\"><circle cx=\"120\" cy=\"120\" r=\"108\" fill=\"none\" stroke=\"#1e3a8a\" stroke-width=\"6\"/><circle cx=\"88\" cy=\"78\" r=\"32\" fill=\"#facc15\"/><path d=\"M66 132c-27 0-29-37-4-43 2-33 47-40 62-13 29-10 52 12 47 34 21 4 22 22 2 22z\" fill=\"white\" stroke=\"#64748b\" stroke-width=\"3\"/><path d=\"M76 149c0 0-12 17-12 25a12 12 0 0 0 24 0c0-8-12-25-12-25z\" fill=\"#2563eb\"/><path d=\"M120 149c0 0-12 17-12 25a12 12 0 0 0 24 0c0-8-12-25-12-25z\" fill=\"#2563eb\"/><path d=\"M164 149c0 0-12 17-12 25a12 12 0 0 0 24 0c0-8-12-25-12-25z\" fill=\"#2563eb\"/></svg>"
+    },
+    "expected": {
+      "requirements": [
+        "Exactly two blue raindrops remain",
+        "The original middle raindrop is absent",
+        "The left raindrop retains its original position, size, and appearance",
+        "The right raindrop retains its original position, size, and appearance",
+        "The sun is unchanged",
+        "The cloud is unchanged",
+        "The circular border is unchanged",
+        "No added objects or background shape"
+      ]
+    }
+  },
+  {
+    "id": "edit-overlap-order",
+    "tags": [
+      "edit",
+      "hard",
+      "preservation",
+      "layering",
+      "spatial",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw an overlapping blue square and red circle, with the red circle in front. Add a small separate yellow triangle in the bottom-right corner."
+        },
+        {
+          "role": "assistant",
+          "content": "Created the requested artwork."
+        },
+        {
+          "role": "user",
+          "content": "Put the blue square in front of the red circle so it hides the overlapping portion of the circle. Change only their stacking order: preserve both shapes' colors, positions, and sizes, and leave the yellow triangle unchanged. Add nothing."
+        }
+      ],
+      "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 240 180\"><rect x=\"100\" y=\"40\" width=\"100\" height=\"100\" fill=\"#2563eb\"/><circle cx=\"95\" cy=\"90\" r=\"55\" fill=\"#ef4444\"/><path d=\"m205 145 18 30h-36z\" fill=\"#facc15\"/></svg>"
+    },
+    "expected": {
+      "requirements": [
+        "The blue square visibly occludes the red circle where they overlap",
+        "A portion of the red circle remains visible to the left of the square",
+        "The square retains its original position and size",
+        "The circle retains its original position and size",
+        "The square remains blue and the circle remains red",
+        "The yellow triangle is unchanged",
+        "No added objects or background shape"
+      ]
+    }
+  },
+  {
+    "id": "edit-grid-swap-colors",
+    "tags": [
+      "edit",
+      "hard",
+      "preservation",
+      "recolor",
+      "spatial",
+      "counting",
+      "challenge"
+    ],
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Draw a grid with three equally sized blue circles across the top and three equally sized orange squares across the bottom, on a transparent background."
+        },
+        {
+          "role": "assistant",
+          "content": "Created the requested artwork."
+        },
+        {
+          "role": "user",
+          "content": "Swap the fill colors of only the top-right circle and the bottom-left square. The top-right circle becomes orange and the bottom-left square becomes blue. Keep the other four shapes unchanged, and preserve every shape's position, size, and shape. Add nothing."
+        }
+      ],
+      "currentSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 300 200\"><circle cx=\"60\" cy=\"55\" r=\"25\" fill=\"#2563eb\"/><circle cx=\"150\" cy=\"55\" r=\"25\" fill=\"#2563eb\"/><circle cx=\"240\" cy=\"55\" r=\"25\" fill=\"#2563eb\"/><rect x=\"35\" y=\"120\" width=\"50\" height=\"50\" fill=\"#f97316\"/><rect x=\"125\" y=\"120\" width=\"50\" height=\"50\" fill=\"#f97316\"/><rect x=\"215\" y=\"120\" width=\"50\" height=\"50\" fill=\"#f97316\"/></svg>"
+    },
+    "expected": {
+      "requirements": [
+        "The top-right circle is orange",
+        "The bottom-left square is blue",
+        "The top-left circle remains blue",
+        "The top-middle circle remains blue",
+        "The bottom-middle square remains orange",
+        "The bottom-right square remains orange",
+        "All six shapes retain their original positions",
+        "All six shapes retain their original sizes and shapes",
+        "Exactly three circles and three squares remain, with no additional objects",
+        "No background shape"
+      ]
+    }
   }
 ]

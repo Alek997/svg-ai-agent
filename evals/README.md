@@ -9,6 +9,18 @@ evidence, while `runs/` contains local generated results and is ignored by Git.
 
 ## Start here
 
+For manual visual-quality scoring, see [Human review](HUMAN-REVIEW.md).
+Run `npm run eval:review -- --serve` to browse saved outputs and score each SVG
+in the UI alongside a persistent rubric. Save review / Save & next writes to that
+run's `human-reviews.yaml`. Existing reviews are loaded and preserved.
+Click **Sync to Braintrust** in the review page header to upload the current run's
+saved ratings and notes. Save form changes first; upload status appears beside
+the button.
+To validate ratings, run `npm run eval:reviews:sync -- --run <run-directory>`;
+add `--upload` to send them to the existing Braintrust experiment as
+`human_visual_quality` and `human_acceptable` scores. Missing reviews stay null,
+not zero. See the human review guide for mappings, clearing ratings and sync rules.
+
 ```bash
 # Validate cases and print the selected scorers. No API calls or uploads.
 npm run eval
@@ -70,6 +82,40 @@ any model call. Inferred TypeScript types keep the rest of the code consistent.
 Write atomic requirements: "exactly three raindrops" is easier to judge than
 "a perfect weather illustration". Keep the checklist fixed during comparisons;
 do not generate a different checklist for each output.
+
+### Case groups
+
+The default `svg-baseline-v1` suite contains 15 cases spanning basic requests,
+complex drawings, and selective edits. The full suite is the dataset for establishing
+the first reference run; `baseline` is not a case tag. Ten detailed cases have a
+`challenge` tag for focused runs. Difficulty labels describe intended coverage,
+not measured failure rates.
+
+| Group                   | Cases                                                                                                 | Coverage                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Basic requests          | `magnifying-glass`, `folder-star`, `weather`, `truck`, `edit-circle`                                  | Basic generation and edit checks                                                          |
+| `extended` generation   | `magnifying-glass-map`, `folder-star-documents`, `weather-mixed-precipitation`, `truck-loading-scene` | Overlap, visible contents, exact counts, ordering, and spatial relationships              |
+| Other `hard` generation | `bicycle-frame`, `branching-flowchart`                                                                | Connected structures and directed diagram edges                                           |
+| `hard` edits            | `edit-truck-cargo-only`, `edit-weather-remove-middle`, `edit-overlap-order`, `edit-grid-swap-colors`  | Selective recoloring, removal, stacking order, and preservation using fixed starting SVGs |
+
+```bash
+# Validate the full suite or a focused group without model calls.
+npm run eval -- --judge
+npm run eval -- --tag challenge --judge
+
+# Establish the v1 reference run; this makes generation and judge calls.
+npm run eval -- --live --judge --name baseline-v1
+```
+
+Check judge evidence, especially counting, connectivity, and
+preservation. They are candidate evaluation cases, not human-calibrated golden
+judgments. Complex requests may still score 100%; add cases for observed
+weaknesses rather than changing scoring to force failures.
+
+For comparisons, run both generator versions against this same dataset with fixed
+judge and rendering settings. Compare future runs to the full v1 reference run.
+Historical five-case averages are not comparable to the full-suite average.
+The suite version and dataset hash identify which cases were evaluated.
 
 ## 2. Task — what application behavior do we run?
 
