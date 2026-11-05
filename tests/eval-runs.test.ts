@@ -90,3 +90,158 @@ test("the directory continues from the last visible provider cursor", async () =
   );
   assert.equal(second.nextCursor, undefined);
 });
+
+test("an eval admin opens a blind preview of a completed generation", async () => {
+  const source =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
+  const review = createEvalReview({
+    authorize: async (userId) => userId === "admin",
+    project: "svg-ai-agent",
+    apiKey: "fixture",
+    fetch: async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v1/project")
+        return Response.json({
+          objects: [{ id: projectId, name: "svg-ai-agent" }],
+        });
+      if (url.pathname === "/v1/experiment") {
+        assert.equal(url.searchParams.get("project_id"), projectId);
+        assert.equal(url.searchParams.get("ids"), firstRun);
+        return Response.json({
+          objects: [
+            { id: firstRun, project_id: projectId, name: "secret-model-run" },
+          ],
+        });
+      }
+      assert.equal(url.pathname, `/v1/experiment/${firstRun}/fetch`);
+      return Response.json({
+        events: [
+          {
+            id: "circle-row",
+            experiment_id: firstRun,
+            input: {
+              id: "circle",
+              input: { messages: [{ role: "user", content: "Draw a circle" }] },
+            },
+            output: {
+              status: "completed",
+              source,
+              usage: { model: "secret-model" },
+            },
+            scores: { automated_quality: 0.75 },
+          },
+        ],
+      });
+    },
+  });
+  assert.deepEqual(await review.getRun("admin", firstRun), {
+    cases: [
+      {
+        id: "circle-row",
+        messages: [{ role: "user", content: "Draw a circle" }],
+        before: null,
+        after: source,
+      },
+    ],
+    nextCursor: null,
+  });
+});
+
+test("direct review requires eval access and a run in the configured project", async () => {
+  const paths: string[] = [];
+  const review = createEvalReview({
+    authorize: async (userId) => userId === "admin",
+    project: "svg-ai-agent",
+    apiKey: "fixture",
+    fetch: async (input) => {
+      const { pathname } = new URL(String(input));
+      paths.push(pathname);
+      if (pathname === "/v1/project")
+        return Response.json({
+          objects: [{ id: projectId, name: "svg-ai-agent" }],
+        });
+      return Response.json({
+        objects: [
+          { id: firstRun, project_id: unrelatedProject, name: "Unrelated" },
+          { id: secondRun, project_id: projectId, name: "Wrong run" },
+        ],
+      });
+    },
+  });
+  await assert.rejects(review.getRun(null, firstRun), { status: 403 });
+  await assert.rejects(review.getRun("collections-only", firstRun), {
+    status: 403,
+  });
+  await assert.rejects(review.getRun("admin", "../invalid"), { status: 404 });
+  assert.deepEqual(paths, []);
+  await assert.rejects(review.getRun("admin", firstRun), { status: 404 });
+  assert.deepEqual(paths, ["/v1/project", "/v1/experiment"]);
+});
+
+test("only completed root outputs with safe artwork can enter blind review", async () => {
+  const before =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+  const after =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+  const unsafe =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(1)</script></svg>';
+  const messages = [
+    { role: "user", content: "Replace the circle with a square" },
+  ];
+  const row = {
+    id: "edit-row",
+    experiment_id: firstRun,
+    span_parents: [],
+    input: { input: { messages, currentSvg: before } },
+    output: { status: "completed", source: after },
+  };
+  const cursor = "opaque+/=";
+  const review = createEvalReview({
+    authorize: async () => true,
+    project: "svg-ai-agent",
+    apiKey: "fixture",
+    fetch: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v1/project")
+        return Response.json({
+          objects: [{ id: projectId, name: "svg-ai-agent" }],
+        });
+      if (url.pathname === "/v1/experiment")
+        return Response.json({
+          objects: [{ id: firstRun, project_id: projectId, name: "Edit run" }],
+        });
+      assert.equal(init?.method, "POST");
+      const body = JSON.parse(String(init?.body));
+      if (body.cursor !== undefined) {
+        assert.deepEqual(body, { limit: 10, cursor });
+        return Response.json({ events: [row] });
+      }
+      assert.deepEqual(body, { limit: 10 });
+      return Response.json({
+        events: [
+          { ...row, id: "failed", output: { status: "failed", source: after } },
+          { ...row, id: "errored", error: "Generation error" },
+          { ...row, id: "child", span_parents: ["root"] },
+          { ...row, id: "other-run", experiment_id: secondRun },
+          {
+            ...row,
+            id: "unsafe-result",
+            output: { ...row.output, source: unsafe },
+          },
+          {
+            ...row,
+            id: "unsafe-original",
+            input: { input: { messages, currentSvg: unsafe } },
+          },
+        ],
+        cursor,
+      });
+    },
+  });
+  const page = await review.getRun("admin", firstRun);
+  assert.deepEqual(page, { cases: [], nextCursor: cursor });
+  assert.deepEqual(await review.getRun("admin", firstRun, cursor), {
+    cases: [{ id: "edit-row", messages, before, after }],
+    nextCursor: null,
+  });
+});

@@ -32,7 +32,13 @@ export default async function EvalRunsPage({
             <ul className="mt-6 divide-y divide-stone-200 rounded-xl border border-stone-200 bg-white">
               {page.runs.map((run) => (
                 <li key={run.id} className="px-4 py-3">
-                  <p className="font-medium">{run.name}</p>
+                  {/* Use a new document so the directory's run names leave the page payload. */}
+                  <a
+                    className="block font-medium underline-offset-4 hover:underline"
+                    href={`/eval-runs/${run.id}`}
+                  >
+                    {run.name}
+                  </a>
                   {run.created ? (
                     <time
                       dateTime={run.created}

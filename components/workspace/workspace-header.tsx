@@ -49,6 +49,7 @@ export async function WorkspaceHeader() {
           </a>
         )}
         {showEvalRuns && (
+          // eslint-disable-next-line @next/next/no-html-link-for-pages -- Preserve the workspace's beforeunload guard.
           <a
             href="/eval-runs"
             className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
