@@ -214,8 +214,9 @@ Every finished run saves `results.json` and accepted SVGs under
 judge evidence/usage, generation usage/timing, and the Braintrust experiment URL
 when available. A nonzero exit code flags failures, unavailable scores, or any
 score below 1. This is a strict review signal, not a production quality threshold.
-Braintrust connection failures stop the run. Uploaded experiments are inspected
-in Braintrust; the application UI has no experiment dashboard.
+Braintrust connection failures stop the run. Users with the Clerk `admin-eval`
+capability can find uploaded experiments in the app under **Eval Runs**.
+Inspect experiment details in Braintrust.
 
 ## Comparing experiments
 

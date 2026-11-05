@@ -1,14 +1,17 @@
 import { auth } from "@clerk/nextjs/server";
 import { ragEnabled } from "@/lib/collections/access";
+import { canReviewEvals } from "@/lib/eval-review/access";
 import { Icon } from "@/components/ui/icon";
 import { UserButton } from "@clerk/nextjs";
 import { getConfiguredModelName } from "@/lib/ai/model";
 
 export async function WorkspaceHeader() {
   const { userId } = await auth();
-  const enabled = userId ? await ragEnabled(userId) : false;
+  const [showCollections, showEvalRuns] = userId
+    ? await Promise.all([ragEnabled(userId), canReviewEvals(userId)])
+    : [false, false];
   return (
-    <header className="flex h-[76px] shrink-0 items-center justify-between border-b border-stone-200 bg-white px-5 sm:px-8">
+    <header className="flex min-h-[76px] shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-stone-200 bg-white px-5 py-3 sm:px-8">
       <div className="flex items-center gap-3">
         <span className="flex size-9 items-center justify-center rounded-xl bg-stone-900 text-white">
           <Icon name="sparkles" />
@@ -28,7 +31,7 @@ export async function WorkspaceHeader() {
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4">
         {/* Full navigation triggers the workspace's beforeunload draft/run guard. */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
@@ -37,12 +40,20 @@ export async function WorkspaceHeader() {
         >
           My SVGs
         </a>
-        {enabled && (
+        {showCollections && (
           <a
             href="/collections"
             className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
           >
             Collections
+          </a>
+        )}
+        {showEvalRuns && (
+          <a
+            href="/eval-runs"
+            className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+          >
+            Eval Runs
           </a>
         )}
         <UserButton />

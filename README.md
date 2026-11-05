@@ -177,6 +177,13 @@ usage or feedback. Text, titles and descriptions inside the SVG are part of the
 shared source. Private conversations are excluded from anonymous reads.
 There is no independent link expiry or revoke control for ordinary results.
 
+### Eval Runs
+
+**Eval Runs** lists uploaded experiments from the configured Braintrust project.
+Set the server's `BRAINTRUST_API_KEY` and `BRAINTRUST_PROJECT`, then add
+`admin-eval` to the authorized user's Clerk private metadata capabilities.
+Preserve any existing capabilities when making that change.
+
 ### Private collections
 
 Collections are disabled unless the authenticated user's Clerk **private
