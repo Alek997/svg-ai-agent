@@ -180,6 +180,7 @@ There is no independent link expiry or revoke control for ordinary results.
 ### Eval Runs
 
 **Eval Runs** lists uploaded experiments from the configured Braintrust project.
+Each run shows rated and skipped counts for eligible completed outputs.
 Open a run to review its completed SVGs blind. **Save review** and **Save & next**
 write the selected output's review to Braintrust.
 Set the server's `BRAINTRUST_API_KEY` and `BRAINTRUST_PROJECT`, then add

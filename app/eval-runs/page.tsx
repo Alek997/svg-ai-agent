@@ -49,6 +49,11 @@ export default async function EvalRunsPage({
                   ) : (
                     <p className="text-sm text-stone-600">Date unavailable</p>
                   )}
+                  <p className="mt-1 text-sm text-stone-600">
+                    {run.progress
+                      ? `${run.progress.rated} of ${run.progress.completed} rated · ${run.progress.skipped} skipped`
+                      : "Review progress unavailable"}
+                  </p>
                 </li>
               ))}
               {!page.runs.length && (

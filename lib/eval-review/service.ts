@@ -12,6 +12,12 @@ import {
 
 const runPageSize = 10;
 const maxPageReads = 5;
+const progressPageSize = 100;
+// A suite supports 1,000 cases, plus a final fetch to confirm the end of the run.
+const maxProgressPageReads = 11;
+type RunRowQuery =
+  | { mode: "current" | "feedback"; ids: string[] }
+  | { mode: "progress" };
 const idSchema = z.uuid();
 const projectSchema = z.object({ id: idSchema, name: z.string() });
 const experimentSchema = z.object({
@@ -96,7 +102,11 @@ export function createEvalReview(options: {
 
   async function request(
     path: string,
-    optionsForRequest: { query?: URLSearchParams; body?: object },
+    optionsForRequest: {
+      query?: URLSearchParams;
+      body?: object;
+      signal?: AbortSignal;
+    },
   ) {
     if (!options.apiKey)
       throw new EvalReviewError(503, "Braintrust is not configured.");
@@ -112,7 +122,7 @@ export function createEvalReview(options: {
       body: body ? JSON.stringify(body) : undefined,
       cache: "no-store",
       redirect: "error",
-      signal: AbortSignal.timeout(10_000),
+      signal: optionsForRequest.signal ?? AbortSignal.timeout(10_000),
     });
     if (!response.ok) {
       if (response.status === 429)
@@ -170,12 +180,13 @@ export function createEvalReview(options: {
 
   async function queryRunRows(
     runId: string,
-    ids: string[],
-    mode: "current" | "feedback",
+    lookup: RunRowQuery,
     cursor?: string,
+    signal?: AbortSignal,
   ) {
-    const auditLog = mode === "feedback";
+    const auditLog = lookup.mode === "feedback";
     const result = await request("/btql", {
+      signal,
       body: {
         query: {
           select: auditLog
@@ -189,12 +200,24 @@ export function createEvalReview(options: {
             name: { op: "ident", name: ["experiment"] },
             args: [{ op: "literal", value: runId }],
           },
-          filter: {
-            op: "in",
-            left: { op: "ident", name: ["id"] },
-            right: { op: "literal", value: ids },
-          },
-          limit: auditLog ? 200 : ids.length + 1,
+          filter:
+            lookup.mode === "progress"
+              ? {
+                  op: "eq",
+                  left: { op: "ident", name: ["output", "status"] },
+                  right: { op: "literal", value: "completed" },
+                }
+              : {
+                  op: "in",
+                  left: { op: "ident", name: ["id"] },
+                  right: { op: "literal", value: lookup.ids },
+                },
+          limit:
+            lookup.mode === "progress"
+              ? progressPageSize
+              : auditLog
+                ? 200
+                : lookup.ids.length + 1,
           cursor,
         },
         audit_log: auditLog,
@@ -211,22 +234,78 @@ export function createEvalReview(options: {
     };
   }
 
-  async function readReviewFeedback(runId: string, ids: string[]) {
-    const rows: unknown[] = [];
+  async function* readRunRowPages(
+    runId: string,
+    lookup: RunRowQuery,
+    maxReads: number,
+    signal?: AbortSignal,
+  ) {
     const seen = new Set<string>();
     let cursor: string | undefined;
-    for (let index = 0; index < maxPageReads; index++) {
-      const page = await queryRunRows(runId, ids, "feedback", cursor);
-      rows.push(...page.data);
-      if (!page.cursor || !page.data.length) return latestReviewFeedback(rows);
+    for (let index = 0; index < maxReads; index++) {
+      const page = await queryRunRows(runId, lookup, cursor, signal);
+      yield page.data;
+      // An empty BTQL page can still have a continuation cursor.
+      if (!page.cursor) return;
       if (seen.has(page.cursor)) break;
       seen.add(page.cursor);
       cursor = page.cursor;
     }
-    throw new EvalReviewError(
-      502,
-      "Could not finish loading the review history.",
-    );
+    throw new EvalReviewError(502, "Could not finish loading eval data.");
+  }
+
+  async function readReviewFeedback(
+    runId: string,
+    ids: string[],
+    signal?: AbortSignal,
+  ) {
+    const rows: unknown[] = [];
+    for await (const page of readRunRowPages(
+      runId,
+      { mode: "feedback", ids },
+      maxPageReads,
+      signal,
+    )) {
+      rows.push(...page);
+    }
+    return latestReviewFeedback(rows);
+  }
+
+  async function readRunProgress(runId: string) {
+    const progress = { completed: 0, rated: 0, skipped: 0 };
+    const seenIds = new Set<string>();
+    const signal = AbortSignal.timeout(10_000);
+    for await (const page of readRunRowPages(
+      runId,
+      { mode: "progress" },
+      maxProgressPageReads,
+      signal,
+    )) {
+      const cases = page
+        .flatMap((row) => toReviewCase(row, runId))
+        .filter(({ id }) => {
+          if (seenIds.has(id)) return false;
+          seenIds.add(id);
+          return true;
+        });
+      if (cases.length) {
+        const feedback = await readReviewFeedback(
+          runId,
+          cases.map(({ id }) => id),
+          signal,
+        );
+        progress.completed += cases.length;
+        for (const item of cases) {
+          const review = readHumanReview(
+            item.outputSha256,
+            feedback.get(item.id),
+          );
+          if (review?.skipped) progress.skipped++;
+          else if (review?.quality != null) progress.rated++;
+        }
+      }
+    }
+    return progress;
   }
 
   async function fetchReviewPage(runId: string, after?: string) {
@@ -266,13 +345,16 @@ export function createEvalReview(options: {
       );
       // Braintrust returns newest first. Keep provider order for its cursor.
       const page = objects.slice(0, runPageSize);
-      const runs = page
-        .filter((experiment) => experiment.project_id === projectId)
-        .map(({ id, name, created }) => ({
-          id,
-          name,
-          created: created ?? null,
-        }));
+      const runs = await Promise.all(
+        page
+          .filter((experiment) => experiment.project_id === projectId)
+          .map(async ({ id, name, created }) => ({
+            id,
+            name,
+            created: created ?? null,
+            progress: await readRunProgress(id).catch(() => null),
+          })),
+      );
       return {
         runs,
         isOlderPage: cursor.success,
@@ -305,7 +387,10 @@ export function createEvalReview(options: {
         throw new EvalReviewError(400, "The review fields are invalid.");
       await requireRun(runId);
       const { id, outputSha256, rating } = payload.data;
-      const { data: rows } = await queryRunRows(runId, [id], "current");
+      const { data: rows } = await queryRunRows(runId, {
+        mode: "current",
+        ids: [id],
+      });
       const matches = rows.filter(
         (row) => rowIdentitySchema.safeParse(row).data?.id === id,
       );

@@ -10,11 +10,12 @@ const unrelatedProject = "72c90c3c-0d44-4b50-8888-8dd25736052a";
 
 test("only an eval admin can list runs, and only from the configured project", async () => {
   let requests = 0;
+  const progressRequests: string[] = [];
   const review = createEvalReview({
     authorize: async (userId) => userId === "admin",
     project: "svg-ai-agent",
     apiKey: "fixture",
-    fetch: async (input) => {
+    fetch: async (input, init) => {
       requests++;
       const url = new URL(String(input));
       if (url.pathname === "/v1/project") {
@@ -22,6 +23,13 @@ test("only an eval admin can list runs, and only from the configured project", a
         return Response.json({
           objects: [{ id: projectId, name: "svg-ai-agent" }],
         });
+      }
+      if (url.pathname === "/btql") {
+        const runId = JSON.parse(String(init?.body)).query.from.args[0].value;
+        progressRequests.push(runId);
+        return runId === firstRun
+          ? new Response(null, { status: 429 })
+          : Response.json({ data: [] });
       }
       assert.equal(url.pathname, "/v1/experiment");
       assert.equal(url.searchParams.get("project_id"), projectId);
@@ -53,9 +61,15 @@ test("only an eval admin can list runs, and only from the configured project", a
   await assert.rejects(review.listRuns(null), { status: 403 });
   assert.equal(requests, 0);
   const page = await review.listRuns("admin");
+  assert.deepEqual(progressRequests.sort(), [firstRun, secondRun]);
   assert.deepEqual(page.runs, [
-    { id: secondRun, name: "Second", created: "2026-11-02T00:00:00Z" },
-    { id: firstRun, name: "First", created: null },
+    {
+      id: secondRun,
+      name: "Second",
+      created: "2026-11-02T00:00:00Z",
+      progress: { completed: 0, rated: 0, skipped: 0 },
+    },
+    { id: firstRun, name: "First", created: null, progress: null },
   ]);
 });
 
@@ -76,6 +90,7 @@ test("the directory continues from the last visible provider cursor", async () =
         return Response.json({
           objects: [{ id: projectId, name: "svg-ai-agent" }],
         });
+      if (url.pathname === "/btql") return Response.json({ data: [] });
       const after = url.searchParams.get("starting_after");
       if (after) assert.equal(after, runs[9].id);
       return Response.json({ objects: after ? [runs[10]] : runs });
@@ -440,4 +455,97 @@ test("opening a run restores the latest matching synced review without automated
       review: synced,
     },
   ]);
+});
+
+test("the directory counts eligible completed outputs and separates rated from skipped", async () => {
+  const source =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+  const outputSha256 = createHash("sha256").update(source).digest("hex");
+  const row = (id: string) => ({
+    id,
+    experiment_id: firstRun,
+    is_root: true,
+    input: {
+      input: { messages: [{ role: "user", content: "Draw a square" }] },
+    },
+    output: { status: "completed", source },
+  });
+  const audit = (
+    id: string,
+    quality: number | null,
+    skipped = false,
+    hash = outputSha256,
+  ) => ({
+    id,
+    _xact_id: "002",
+    audit_data: {
+      metadata: {
+        humanReview: {
+          quality,
+          skipped,
+          acceptable: skipped ? null : true,
+          problems: [],
+          notes: "",
+          reviewer: "Reviewer",
+          rubricVersion: "human-visual-quality-v1",
+          outputSha256: hash,
+        },
+      },
+    },
+  });
+  const review = createEvalReview({
+    authorize: async () => true,
+    project: "svg-ai-agent",
+    apiKey: "fixture",
+    fetch: async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v1/project")
+        return Response.json({
+          objects: [{ id: projectId, name: "svg-ai-agent" }],
+        });
+      if (url.pathname === "/v1/experiment")
+        return Response.json({
+          objects: [{ id: firstRun, project_id: projectId, name: "Run" }],
+        });
+      assert.equal(url.pathname, "/btql");
+      const { query, audit_log } = JSON.parse(String(init?.body));
+      assert.equal(query.from.args[0].value, firstRun);
+      if (audit_log) {
+        const entries = [
+          audit("rated", 4),
+          audit("skip", null, true),
+          audit("accept-only", null),
+          audit("stale", 5, false, "0".repeat(64)),
+        ];
+        return Response.json({
+          data: entries.filter((entry) =>
+            query.filter.right.value.includes(entry.id),
+          ),
+        });
+      }
+      if (query.cursor) {
+        if (query.cursor === "next-page")
+          return Response.json({ data: [], cursor: "after-empty-page" });
+        assert.equal(query.cursor, "after-empty-page");
+        return Response.json({ data: [row("stale"), row("rated")] });
+      }
+      return Response.json({
+        data: [
+          row("rated"),
+          row("skip"),
+          row("accept-only"),
+          { ...row("failed"), output: { status: "failed", source } },
+          { ...row("child"), is_root: false },
+          { ...row("other-run"), experiment_id: secondRun },
+          {
+            ...row("unsafe"),
+            output: { status: "completed", source: "<svg><script/></svg>" },
+          },
+        ],
+        cursor: "next-page",
+      });
+    },
+  });
+  const { runs } = await review.listRuns("admin");
+  assert.deepEqual(runs[0].progress, { completed: 4, rated: 1, skipped: 1 });
 });
