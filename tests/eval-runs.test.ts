@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { createEvalReview } from "../lib/eval-review/service";
 
@@ -113,6 +114,7 @@ test("an eval admin opens a blind preview of a completed generation", async () =
           ],
         });
       }
+      if (url.pathname === "/btql") return Response.json({ data: [] });
       assert.equal(url.pathname, `/v1/experiment/${firstRun}/fetch`);
       return Response.json({
         events: [
@@ -128,7 +130,7 @@ test("an eval admin opens a blind preview of a completed generation", async () =
               source,
               usage: { model: "secret-model" },
             },
-            scores: { automated_quality: 0.75 },
+            scores: { automated_quality: 0.75, human_visual_quality: 0.8 },
           },
         ],
       });
@@ -141,6 +143,8 @@ test("an eval admin opens a blind preview of a completed generation", async () =
         messages: [{ role: "user", content: "Draw a circle" }],
         before: null,
         after: source,
+        outputSha256: createHash("sha256").update(source).digest("hex"),
+        review: null,
       },
     ],
     nextCursor: null,
@@ -210,6 +214,7 @@ test("only completed root outputs with safe artwork can enter blind review", asy
         return Response.json({
           objects: [{ id: firstRun, project_id: projectId, name: "Edit run" }],
         });
+      if (url.pathname === "/btql") return Response.json({ data: [] });
       assert.equal(init?.method, "POST");
       const body = JSON.parse(String(init?.body));
       if (body.cursor !== undefined) {
@@ -238,10 +243,201 @@ test("only completed root outputs with safe artwork can enter blind review", asy
       });
     },
   });
-  const page = await review.getRun("admin", firstRun);
-  assert.deepEqual(page, { cases: [], nextCursor: cursor });
-  assert.deepEqual(await review.getRun("admin", firstRun, cursor), {
-    cases: [{ id: "edit-row", messages, before, after }],
+  assert.deepEqual(await review.getRun("admin", firstRun), {
+    cases: [
+      {
+        id: "edit-row",
+        messages,
+        before,
+        after,
+        outputSha256: createHash("sha256").update(after).digest("hex"),
+        review: null,
+      },
+    ],
     nextCursor: null,
   });
+});
+
+test("saving writes only the selected output's human review under the authenticated reviewer", async () => {
+  const source =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
+  const outputSha256 = createHash("sha256").update(source).digest("hex");
+  const feedback: unknown[] = [];
+  let status = "completed";
+  const review = createEvalReview({
+    authorize: async (userId) => userId === "admin",
+    project: "svg-ai-agent",
+    apiKey: "fixture",
+    fetch: async (input, init) => {
+      const { pathname } = new URL(String(input));
+      if (pathname === "/v1/project")
+        return Response.json({
+          objects: [{ id: projectId, name: "svg-ai-agent" }],
+        });
+      if (pathname === "/v1/experiment")
+        return Response.json({
+          objects: [{ id: firstRun, project_id: projectId, name: "Run" }],
+        });
+      if (pathname === "/btql")
+        return Response.json({
+          data: [
+            {
+              id: "circle-row",
+              experiment_id: firstRun,
+              input: {
+                input: {
+                  messages: [{ role: "user", content: "Draw a circle" }],
+                },
+              },
+              output: { status, source },
+            },
+          ],
+        });
+      assert.equal(pathname, `/v1/experiment/${firstRun}/feedback`);
+      feedback.push(JSON.parse(String(init?.body)));
+      return Response.json({ status: "success" });
+    },
+  });
+  const rating = {
+    quality: 4,
+    acceptable: false,
+    problems: ["composition"],
+    notes: "Off-center",
+    skipped: false,
+  };
+  const payload = { id: "circle-row", outputSha256, rating };
+  await assert.rejects(
+    review.saveReview("collections-only", firstRun, payload),
+    { status: 403 },
+  );
+  await assert.rejects(
+    review.saveReview("admin", firstRun, {
+      ...payload,
+      rating: { ...rating, notes: "x".repeat(5001) },
+    }),
+    { status: 400 },
+  );
+  await assert.rejects(review.saveReview("admin", secondRun, payload), {
+    status: 404,
+  });
+  status = "failed";
+  await assert.rejects(review.saveReview("admin", firstRun, payload), {
+    status: 404,
+  });
+  status = "completed";
+  await assert.rejects(
+    review.saveReview("admin", firstRun, {
+      ...payload,
+      outputSha256: "0".repeat(64),
+    }),
+    { status: 409 },
+  );
+  assert.deepEqual(feedback, []);
+  assert.deepEqual(await review.saveReview("admin", firstRun, payload), {
+    ...rating,
+    reviewer: "admin",
+  });
+  assert.deepEqual(feedback, [
+    {
+      feedback: [
+        {
+          id: "circle-row",
+          scores: { human_visual_quality: 0.8, human_acceptable: 0 },
+          metadata: {
+            humanReview: {
+              ...rating,
+              rubricVersion: "human-visual-quality-v1",
+              outputSha256,
+              reviewer: "admin",
+            },
+          },
+          source: "external",
+        },
+      ],
+    },
+  ]);
+});
+
+test("opening a run restores the latest matching synced review without automated scores", async () => {
+  const source =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+  const outputSha256 = createHash("sha256").update(source).digest("hex");
+  const synced = {
+    quality: 4,
+    acceptable: false,
+    problems: ["composition"],
+    notes: "Legacy note",
+    skipped: false,
+    reviewer: "Local reviewer",
+  };
+  const auditRow = (xact: string, notes: string) => ({
+    id: "reviewed-row",
+    _xact_id: xact,
+    audit_data: {
+      action: "merge",
+      metadata: {
+        humanReview: {
+          ...synced,
+          notes,
+          outputSha256,
+          rubricVersion: "human-visual-quality-v1",
+        },
+      },
+    },
+  });
+  const service = createEvalReview({
+    authorize: async () => true,
+    project: "svg-ai-agent",
+    apiKey: "fixture",
+    fetch: async (input, init) => {
+      const { pathname } = new URL(String(input));
+      if (pathname === "/v1/project")
+        return Response.json({
+          objects: [{ id: projectId, name: "svg-ai-agent" }],
+        });
+      if (pathname === "/v1/experiment")
+        return Response.json({
+          objects: [{ id: firstRun, project_id: projectId, name: "Run" }],
+        });
+      if (pathname === "/btql") {
+        const { audit_log, query } = JSON.parse(String(init?.body));
+        assert.equal(audit_log, true);
+        if (!query.cursor)
+          return Response.json(
+            { data: [auditRow("002", synced.notes)] },
+            { headers: { "x-bt-cursor": "more-history" } },
+          );
+        assert.equal(query.cursor, "more-history");
+        return Response.json({ data: [auditRow("001", "Older note")] });
+      }
+      return Response.json({
+        events: [
+          {
+            id: "reviewed-row",
+            experiment_id: firstRun,
+            input: {
+              input: { messages: [{ role: "user", content: "Draw a square" }] },
+            },
+            output: { status: "completed", source },
+            scores: {
+              human_visual_quality: 0.8,
+              human_acceptable: 0,
+              automated_judge: 0.234,
+            },
+          },
+        ],
+      });
+    },
+  });
+  const page = await service.getRun("admin", firstRun);
+  assert.deepEqual(page.cases, [
+    {
+      id: "reviewed-row",
+      messages: [{ role: "user", content: "Draw a square" }],
+      before: null,
+      after: source,
+      outputSha256,
+      review: synced,
+    },
+  ]);
 });

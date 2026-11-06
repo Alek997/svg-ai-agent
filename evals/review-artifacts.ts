@@ -1,11 +1,17 @@
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { renderSvg } from "../lib/svg/render-svg";
 import { evalCaseSchema } from "./types";
 
-export const reviewRubricVersion = "human-visual-quality-v1";
+import {
+  problemTags,
+  reviewRubricVersion,
+  visualQualityRubric,
+} from "../lib/eval-review/contracts";
+import { outputHash } from "../lib/eval-review/ratings";
+
+export { reviewRubricVersion } from "../lib/eval-review/contracts";
 
 export const savedRunSchema = z.object({
   results: z.array(
@@ -44,7 +50,7 @@ export async function prepareReview(directory: string) {
       continue;
     }
     const item = row.input;
-    const hash = createHash("sha256").update(row.output.source).digest("hex");
+    const hash = outputHash(row.output.source);
     // Render through the application's validator. Raw SVG never enters the HTML.
     const result = await renderSvg(row.output.source, 768);
     const before = item.input.currentSvg
@@ -108,17 +114,13 @@ ${reviews.length ? reviews.join("\n") : "  []\n"}`;
         "",
       )}</select><button id="next" type="button" aria-label="Next SVG" title="Next SVG">→</button><span id="progress" class="hint"></span></div>
     ${cards.join("\n")}<section class="rubric-panel" aria-label="Visual quality rubric"><h2>Visual quality rubric</h2><ol class="rubric">
-    <li><b>Broken:</b> Major defects make the subject or action hard to understand.</li>
-    <li><b>Rough:</b> Recognizable; conspicuous structural or visual defects need substantial revision.</li>
-    <li><b>Acceptable:</b> Coherent and readable, with minor awkward details.</li>
-    <li><b>Polished:</b> Consistent geometry and style, clear silhouettes, deliberate composition.</li>
-    <li><b>Excellent:</b> Strong composition and execution; important details remain clear at normal size.</li></ol>
+    ${visualQualityRubric.map(({ anchor, evidence }) => `<li><b>${anchor}:</b> ${evidence}</li>`).join("")}</ol>
     <p class="hint">Judge execution within the intended style. Simple artwork can earn 5. Gray is a viewing backdrop.</p>
     </section></main><aside aria-label="Scoring"><h2>Your review</h2>
     <form id="review-form"><fieldset id="review-fields" disabled style="border:0;padding:0;margin:0"><label for="reviewer">Reviewer</label><input id="reviewer" type="text" maxlength="200" placeholder="Your name or initials">
     <label for="quality">Quality</label><select id="quality"><option value="">N/A · unscored</option><option value="1">1 · Broken</option><option value="2">2 · Rough</option><option value="3">3 · Acceptable</option><option value="4">4 · Polished</option><option value="5">5 · Excellent</option></select>
     <label for="acceptable">Would you deliver this result?</label><select id="acceptable"><option value="">N/A · unscored</option><option value="true">Yes</option><option value="false">No</option></select><p class="hint">Consider appearance and the actual request; for edits, also preservation.</p>
-    <label>Problems</label><div class="tags">${["perspective", "anatomy", "structure", "overlaps", "composition", "style", "legibility", "other"].map((tag) => `<label><input type="checkbox" name="problem" value="${tag}"> ${tag}</label>`).join("")}</div>
+    <label>Problems</label><div class="tags">${problemTags.map((tag) => `<label><input type="checkbox" name="problem" value="${tag}"> ${tag}</label>`).join("")}</div>
     <label for="notes">Notes</label><textarea id="notes" rows="2" maxlength="5000" placeholder="What specifically works or needs fixing?"></textarea>
     <label><input id="skipped" type="checkbox"> Skip / uncertain</label>
     <div class="actions"><button class="primary" type="submit" id="save">Save review</button><button type="button" id="save-next">Save & next</button></div></fieldset>

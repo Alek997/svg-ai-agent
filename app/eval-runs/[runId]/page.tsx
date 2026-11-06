@@ -2,8 +2,11 @@ import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ReviewArtwork } from "@/components/eval-review/review-artwork";
+import { ReviewForm } from "@/components/eval-review/review-form";
+import { visualQualityRubric } from "@/lib/eval-review/contracts";
 import { evalReview } from "@/lib/eval-review/access";
 import { EvalReviewError } from "@/lib/eval-review/service";
+import { saveEvalReview } from "./actions";
 
 export default async function EvalRunPage({
   params,
@@ -24,6 +27,9 @@ export default async function EvalRunPage({
       return null;
     });
   const runPath = `/eval-runs/${encodeURIComponent(runId)}`;
+  const nextPage = page?.nextCursor
+    ? `${runPath}?${new URLSearchParams({ after: page.nextCursor })}`
+    : undefined;
 
   return (
     <main className="min-h-dvh bg-stone-50">
@@ -34,10 +40,30 @@ export default async function EvalRunPage({
         <h1 className="mt-3 text-2xl font-semibold">Blind review</h1>
         {page ? (
           <>
+            {page.cases.length > 0 && (
+              <details className="mt-4 rounded-lg border border-stone-200 bg-white p-3 text-sm text-stone-700">
+                <summary className="cursor-pointer font-medium">
+                  Visual quality rubric
+                </summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-5">
+                  {visualQualityRubric.map(({ anchor, evidence }) => (
+                    <li key={anchor}>
+                      <strong>{anchor}.</strong> {evidence}
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-2">
+                  Judge execution within the intended style. Simple artwork can
+                  earn a 5.
+                </p>
+              </details>
+            )}
             <div className="mt-6 space-y-5">
-              {page.cases.map((item) => (
+              {page.cases.map((item, index) => (
                 <article
-                  key={item.id}
+                  key={`${item.id}:${item.outputSha256}`}
+                  id={`review-case-${index}`}
+                  tabIndex={-1}
                   className="rounded-xl border border-stone-200 bg-white p-4 sm:p-6"
                 >
                   <h2 className="font-semibold">Request</h2>
@@ -65,6 +91,21 @@ export default async function EvalRunPage({
                       source={item.after}
                     />
                   </div>
+                  <ReviewForm
+                    initialReview={item.review}
+                    save={saveEvalReview.bind(
+                      null,
+                      runId,
+                      item.id,
+                      item.outputSha256,
+                    )}
+                    nextId={
+                      index + 1 < page.cases.length
+                        ? `review-case-${index + 1}`
+                        : undefined
+                    }
+                    nextPage={nextPage}
+                  />
                 </article>
               ))}
               {!page.cases.length && (
@@ -79,15 +120,8 @@ export default async function EvalRunPage({
                   First page
                 </Link>
               )}
-              {page.nextCursor && (
-                <Link
-                  className="underline"
-                  href={{
-                    pathname: runPath,
-                    query: { after: page.nextCursor },
-                  }}
-                  prefetch={false}
-                >
+              {nextPage && (
+                <Link className="underline" href={nextPage} prefetch={false}>
                   Next page
                 </Link>
               )}

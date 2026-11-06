@@ -1,21 +1,20 @@
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import { evalCaseSchema } from "./types";
-import { reviewRubricVersion } from "./review-artifacts";
+import {
+  outputHashSchema,
+  ratingFieldsSchema,
+  reviewRubricVersion,
+} from "../lib/eval-review/contracts";
+import { encodeHumanReview, outputHash } from "../lib/eval-review/ratings";
 
-const reviewSchema = z
-  .object({
-    case: z.string(),
-    output_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    quality: z.number().int().min(1).max(5).nullable(),
-    acceptable: z.boolean().nullable(),
-    problems: z.array(z.string().trim().min(1).max(100)).max(20),
-    notes: z.string().max(5000),
-    skipped: z.boolean(),
-  })
-  .strict();
+export { outputHash } from "../lib/eval-review/ratings";
+
+const reviewSchema = ratingFieldsSchema.extend({
+  case: z.string(),
+  output_sha256: outputHashSchema,
+});
 
 export const humanReviewsSchema = z
   .object({
@@ -85,10 +84,6 @@ export function parseHumanReviews(text: string) {
   return humanReviewsSchema.parse(document.toJS({ maxAliasCount: 0 }));
 }
 
-export function outputHash(source: string) {
-  return createHash("sha256").update(source).digest("hex");
-}
-
 export function prepareHumanScores(
   run: z.infer<typeof reviewRunSchema>,
   document: z.infer<typeof humanReviewsSchema>,
@@ -111,24 +106,17 @@ export function prepareHumanScores(
     const acceptable = review && !review.skipped ? review.acceptable : null;
     return {
       row,
-      scores: {
-        human_visual_quality: quality === null ? null : quality / 5,
-        human_acceptable: acceptable === null ? null : Number(acceptable),
-      },
-      metadata: {
-        humanReview: {
-          rubricVersion: document.rubric_version,
+      ...encodeHumanReview(
+        {
           reviewer: document.reviewer || null,
           quality,
           acceptable,
           problems: review?.problems ?? [],
           notes: review?.notes ?? "",
           skipped: review?.skipped ?? false,
-          outputSha256: row.output?.source
-            ? outputHash(row.output.source)
-            : null,
         },
-      },
+        row.output?.source ? outputHash(row.output.source) : null,
+      ),
     };
   });
 }
