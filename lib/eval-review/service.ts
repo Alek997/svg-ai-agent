@@ -3,21 +3,14 @@ import { z } from "zod";
 import { safeSvgSchema } from "@/lib/svg/validate-svg";
 import { generationRequestSchema } from "@/lib/workspace/contracts";
 import { saveReviewSchema } from "./contracts";
-import {
-  encodeHumanReview,
-  latestReviewFeedback,
-  outputHash,
-  readHumanReview,
-} from "./ratings";
+import { encodeHumanReview, outputHash, readHumanReview } from "./ratings";
 
 const runPageSize = 10;
 const maxPageReads = 5;
 const progressPageSize = 100;
 // A suite supports 1,000 cases, plus a final fetch to confirm the end of the run.
 const maxProgressPageReads = 11;
-type RunRowQuery =
-  | { mode: "current" | "feedback"; ids: string[] }
-  | { mode: "progress" };
+type RunRowQuery = { mode: "current"; id: string } | { mode: "progress" };
 const idSchema = z.uuid();
 const projectSchema = z.object({ id: idSchema, name: z.string() });
 const experimentSchema = z.object({
@@ -43,6 +36,7 @@ const eventSchema = z.object({
   span_parents: z.array(z.string()).nullish(),
   is_root: z.boolean().nullish(),
   error: z.unknown().optional(),
+  audit_data: z.unknown().optional(),
   input: z.object({ input: generationRequestSchema }),
   output: z.object({ status: z.literal("completed"), source: z.string() }),
 });
@@ -64,13 +58,15 @@ function toReviewCase(value: unknown, runId: string) {
   const before =
     currentSvg === undefined ? null : safeSvgSchema.safeParse(currentSvg);
   if (!after.success || before?.success === false) return [];
+  const outputSha256 = outputHash(row.output.source);
   return [
     {
       id: row.id,
       messages,
       before: before?.data.source ?? null,
       after: after.data.source,
-      outputSha256: outputHash(row.output.source),
+      outputSha256,
+      review: readHumanReview(outputSha256, row.audit_data),
     },
   ];
 }
@@ -88,6 +84,7 @@ export function createEvalReview(options: {
   authorize: (userId: string) => Promise<boolean>;
   project: string;
   apiKey?: string;
+  apiUrl?: string;
   fetch?: typeof fetch;
 }) {
   async function requireAccess(userId: string | null) {
@@ -110,7 +107,7 @@ export function createEvalReview(options: {
   ) {
     if (!options.apiKey)
       throw new EvalReviewError(503, "Braintrust is not configured.");
-    const url = new URL(path, "https://api.braintrust.dev");
+    const url = new URL(path, options.apiUrl || "https://api.braintrust.dev");
     const { query, body } = optionsForRequest;
     if (query) url.search = query.toString();
     const response = await (options.fetch ?? fetch)(url, {
@@ -184,17 +181,11 @@ export function createEvalReview(options: {
     cursor?: string,
     signal?: AbortSignal,
   ) {
-    const auditLog = lookup.mode === "feedback";
     const result = await request("/btql", {
       signal,
       body: {
         query: {
-          select: auditLog
-            ? ["id", "_xact_id", "audit_data"].map((name) => ({
-                op: "ident",
-                name: [name],
-              }))
-            : [{ op: "star" }],
+          select: [{ op: "star" }],
           from: {
             op: "function",
             name: { op: "ident", name: ["experiment"] },
@@ -210,17 +201,13 @@ export function createEvalReview(options: {
               : {
                   op: "in",
                   left: { op: "ident", name: ["id"] },
-                  right: { op: "literal", value: lookup.ids },
+                  right: { op: "literal", value: [lookup.id] },
                 },
-          limit:
-            lookup.mode === "progress"
-              ? progressPageSize
-              : auditLog
-                ? 200
-                : lookup.ids.length + 1,
+          limit: lookup.mode === "progress" ? progressPageSize : 2,
           cursor,
         },
-        audit_log: auditLog,
+        // Merged rows include the review history in audit_data.
+        audit_log: false,
         use_columnstore: false,
         brainstore_realtime: true,
       },
@@ -234,16 +221,16 @@ export function createEvalReview(options: {
     };
   }
 
-  async function* readRunRowPages(
-    runId: string,
-    lookup: RunRowQuery,
-    maxReads: number,
-    signal?: AbortSignal,
-  ) {
+  async function* readRunRowPages(runId: string, signal: AbortSignal) {
     const seen = new Set<string>();
     let cursor: string | undefined;
-    for (let index = 0; index < maxReads; index++) {
-      const page = await queryRunRows(runId, lookup, cursor, signal);
+    for (let index = 0; index < maxProgressPageReads; index++) {
+      const page = await queryRunRows(
+        runId,
+        { mode: "progress" },
+        cursor,
+        signal,
+      );
       yield page.data;
       // An empty BTQL page can still have a continuation cursor.
       if (!page.cursor) return;
@@ -254,55 +241,19 @@ export function createEvalReview(options: {
     throw new EvalReviewError(502, "Could not finish loading eval data.");
   }
 
-  async function readReviewFeedback(
-    runId: string,
-    ids: string[],
-    signal?: AbortSignal,
-  ) {
-    const rows: unknown[] = [];
-    for await (const page of readRunRowPages(
-      runId,
-      { mode: "feedback", ids },
-      maxPageReads,
-      signal,
-    )) {
-      rows.push(...page);
-    }
-    return latestReviewFeedback(rows);
-  }
-
   async function readRunProgress(runId: string) {
     const progress = { completed: 0, rated: 0, skipped: 0 };
     const seenIds = new Set<string>();
     const signal = AbortSignal.timeout(10_000);
-    for await (const page of readRunRowPages(
-      runId,
-      { mode: "progress" },
-      maxProgressPageReads,
-      signal,
-    )) {
-      const cases = page
-        .flatMap((row) => toReviewCase(row, runId))
-        .filter(({ id }) => {
-          if (seenIds.has(id)) return false;
-          seenIds.add(id);
-          return true;
-        });
-      if (cases.length) {
-        const feedback = await readReviewFeedback(
-          runId,
-          cases.map(({ id }) => id),
-          signal,
-        );
-        progress.completed += cases.length;
-        for (const item of cases) {
-          const review = readHumanReview(
-            item.outputSha256,
-            feedback.get(item.id),
-          );
-          if (review?.skipped) progress.skipped++;
-          else if (review?.quality != null) progress.rated++;
-        }
+    for await (const page of readRunRowPages(runId, signal)) {
+      for (const { id, review } of page.flatMap((row) =>
+        toReviewCase(row, runId),
+      )) {
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+        progress.completed++;
+        if (review?.skipped) progress.skipped++;
+        else if (review?.quality != null) progress.rated++;
       }
     }
     return progress;
@@ -365,20 +316,7 @@ export function createEvalReview(options: {
       await requireAccess(userId);
       await requireRun(runId);
 
-      const { cases, nextCursor } = await fetchReviewPage(runId, after);
-      const feedback = cases.length
-        ? await readReviewFeedback(
-            runId,
-            cases.map(({ id }) => id),
-          )
-        : null;
-      return {
-        cases: cases.map((item) => ({
-          ...item,
-          review: readHumanReview(item.outputSha256, feedback?.get(item.id)),
-        })),
-        nextCursor,
-      };
+      return fetchReviewPage(runId, after);
     },
     async saveReview(userId: string | null, runId: string, input: unknown) {
       const reviewer = await requireAccess(userId);
@@ -389,7 +327,7 @@ export function createEvalReview(options: {
       const { id, outputSha256, rating } = payload.data;
       const { data: rows } = await queryRunRows(runId, {
         mode: "current",
-        ids: [id],
+        id,
       });
       const matches = rows.filter(
         (row) => rowIdentitySchema.safeParse(row).data?.id === id,

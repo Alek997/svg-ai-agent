@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { EvalNavigationLink } from "@/components/eval-review/eval-navigation-link";
 import { WorkspaceHeader } from "@/components/workspace/workspace-header";
 import { evalReview } from "@/lib/eval-review/access";
 import { EvalReviewError } from "@/lib/eval-review/service";
@@ -32,13 +32,13 @@ export default async function EvalRunsPage({
             <ul className="mt-6 divide-y divide-stone-200 rounded-xl border border-stone-200 bg-white">
               {page.runs.map((run) => (
                 <li key={run.id} className="px-4 py-3">
-                  {/* Use a new document so the directory's run names leave the page payload. */}
-                  <a
-                    className="block font-medium underline-offset-4 hover:underline"
+                  <EvalNavigationLink
+                    className="block font-medium underline-offset-4 hover:underline active:text-stone-500"
                     href={`/eval-runs/${run.id}`}
+                    pendingLabel="Opening run…"
                   >
                     {run.name}
-                  </a>
+                  </EvalNavigationLink>
                   {run.created ? (
                     <time
                       dateTime={run.created}
@@ -63,30 +63,35 @@ export default async function EvalRunsPage({
               )}
             </ul>
             {page.nextCursor && (
-              <Link
+              <EvalNavigationLink
                 className="mt-4 inline-block text-sm underline"
                 href={`?after=${page.nextCursor}`}
-                prefetch={false}
               >
                 Older runs
-              </Link>
+              </EvalNavigationLink>
             )}
             {page.isOlderPage && (
-              <Link
+              <EvalNavigationLink
                 className="mt-4 ml-4 inline-block text-sm underline"
                 href="/eval-runs"
-                prefetch={false}
               >
                 Newest runs
-              </Link>
+              </EvalNavigationLink>
             )}
           </>
         ) : (
           <p role="alert" className="mt-6 text-sm text-red-700">
             Could not load eval runs.{" "}
-            <Link className="underline" href="/eval-runs" prefetch={false}>
+            <EvalNavigationLink
+              className="underline"
+              href={
+                typeof after === "string"
+                  ? `?after=${encodeURIComponent(after)}`
+                  : "/eval-runs"
+              }
+            >
               Reload Eval Runs
-            </Link>
+            </EvalNavigationLink>
             .
           </p>
         )}

@@ -11,4 +11,5 @@ export const evalReview = createEvalReview({
   authorize: canReviewEvals,
   project: process.env.BRAINTRUST_PROJECT?.trim() || "svg-ai-agent",
   apiKey: process.env.BRAINTRUST_API_KEY?.trim(),
+  apiUrl: process.env.BRAINTRUST_API_URL?.trim(),
 });

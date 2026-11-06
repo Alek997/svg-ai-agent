@@ -13,32 +13,28 @@ const feedbackReviewSchema = savedReviewSchema
     outputSha256: outputHashSchema,
   })
   .strip();
-const auditRowSchema = z.object({
-  id: z.string(),
+const reviewAuditEntrySchema = z.object({
   _xact_id: z.string(),
-  audit_data: z.object({
-    metadata: z.object({ humanReview: feedbackReviewSchema }),
-  }),
+  metadata: z.object({ humanReview: feedbackReviewSchema }),
 });
-export function latestReviewFeedback(rows: unknown[]) {
-  const reviews = new Map<string, z.infer<typeof auditRowSchema>>();
-  for (const row of rows) {
-    const parsed = auditRowSchema.safeParse(row);
-    if (!parsed.success) continue;
-    const entry = parsed.data;
-    const previous = reviews.get(entry.id);
-    if (!previous || entry._xact_id > previous._xact_id)
-      reviews.set(entry.id, entry);
-  }
-  return reviews;
-}
-
 export function readHumanReview(
   outputSha256: string,
-  feedback?: z.infer<typeof auditRowSchema>,
+  history: unknown,
 ): SavedReview | null {
-  const review = feedback?.audit_data.metadata.humanReview;
-  if (!review || review.outputSha256 !== outputSha256) return null;
+  if (!Array.isArray(history)) return null;
+  let latest: z.infer<typeof reviewAuditEntrySchema> | undefined;
+  for (const entry of history) {
+    const parsed = reviewAuditEntrySchema.safeParse(entry);
+    if (!parsed.success) continue;
+    const candidate = parsed.data;
+    if (
+      candidate.metadata.humanReview.outputSha256 === outputSha256 &&
+      (!latest || candidate._xact_id > latest._xact_id)
+    )
+      latest = candidate;
+  }
+  const review = latest?.metadata.humanReview;
+  if (!review) return null;
   const { quality, acceptable, problems, notes, skipped, reviewer } = review;
   return { quality, acceptable, problems, notes, skipped, reviewer };
 }

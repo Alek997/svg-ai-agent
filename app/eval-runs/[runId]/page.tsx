@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { EvalNavigationLink } from "@/components/eval-review/eval-navigation-link";
 import { ReviewArtwork } from "@/components/eval-review/review-artwork";
 import { ReviewForm } from "@/components/eval-review/review-form";
 import { visualQualityRubric } from "@/lib/eval-review/contracts";
@@ -19,13 +19,20 @@ export default async function EvalRunPage({
   const { after } = await searchParams;
   const cursor = typeof after === "string" && after ? after : undefined;
   const { userId } = await auth();
-  const page = await evalReview
-    .getRun(userId, runId, cursor)
-    .catch((error: unknown) => {
+  const { page, message } = await evalReview.getRun(userId, runId, cursor).then(
+    (page) => ({ page, message: null }),
+    (error: unknown) => {
       if (error instanceof EvalReviewError && [403, 404].includes(error.status))
         notFound();
-      return null;
-    });
+      return {
+        page: null,
+        message:
+          error instanceof EvalReviewError && error.status === 429
+            ? error.message
+            : "Could not load this eval run.",
+      };
+    },
+  );
   const runPath = `/eval-runs/${encodeURIComponent(runId)}`;
   const nextPage = page?.nextCursor
     ? `${runPath}?${new URLSearchParams({ after: page.nextCursor })}`
@@ -34,9 +41,9 @@ export default async function EvalRunPage({
   return (
     <main className="min-h-dvh bg-stone-50">
       <section className="mx-auto max-w-4xl px-5 py-8">
-        <Link className="text-sm underline" href="/eval-runs" prefetch={false}>
+        <EvalNavigationLink className="text-sm underline" href="/eval-runs">
           Back to Eval Runs
-        </Link>
+        </EvalNavigationLink>
         <h1 className="mt-3 text-2xl font-semibold">Blind review</h1>
         {page ? (
           <>
@@ -64,7 +71,7 @@ export default async function EvalRunPage({
                   key={`${item.id}:${item.outputSha256}`}
                   id={`review-case-${index}`}
                   tabIndex={-1}
-                  className="rounded-xl border border-stone-200 bg-white p-4 sm:p-6"
+                  className="rounded-xl border border-stone-200 bg-white p-4 focus:outline-2 focus:outline-stone-500 sm:p-6"
                 >
                   <h2 className="font-semibold">Request</h2>
                   <ol className="mt-2 space-y-2 text-sm text-stone-700">
@@ -116,27 +123,34 @@ export default async function EvalRunPage({
             </div>
             <nav aria-label="Review pages" className="mt-5 flex gap-5 text-sm">
               {cursor && (
-                <Link className="underline" href={runPath} prefetch={false}>
+                <EvalNavigationLink className="underline" href={runPath}>
                   First page
-                </Link>
+                </EvalNavigationLink>
               )}
               {nextPage && (
-                <Link className="underline" href={nextPage} prefetch={false}>
+                <EvalNavigationLink className="underline" href={nextPage}>
                   Next page
-                </Link>
+                </EvalNavigationLink>
               )}
             </nav>
           </>
         ) : (
-          <form action={runPath} className="mt-6 text-sm">
-            {cursor && <input type="hidden" name="after" value={cursor} />}
+          <div className="mt-6 text-sm">
             <p role="alert" className="text-red-700">
-              Could not load this eval run.
+              {message}
             </p>
-            <button className="mt-2 underline" type="submit">
+            <EvalNavigationLink
+              className="mt-2 inline-block underline"
+              href={
+                cursor
+                  ? `${runPath}?${new URLSearchParams({ after: cursor })}`
+                  : runPath
+              }
+              pendingLabel="Retrying…"
+            >
               Retry
-            </button>
-          </form>
+            </EvalNavigationLink>
+          </div>
         )}
       </section>
     </main>

@@ -186,6 +186,8 @@ write the selected output's review to Braintrust.
 Set the server's `BRAINTRUST_API_KEY` and `BRAINTRUST_PROJECT`, then add
 `admin-eval` to the authorized user's Clerk private metadata capabilities.
 Preserve any existing capabilities when making that change.
+For a regional Braintrust data plane, set `BRAINTRUST_API_URL` to its API
+origin, such as `https://api-eu.braintrust.dev`.
 
 ### Private collections
 

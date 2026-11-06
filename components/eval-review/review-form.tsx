@@ -24,6 +24,7 @@ export function ReviewForm({
   const [reviewer, setReviewer] = useState(initialReview?.reviewer ?? null);
   const [skipped, setSkipped] = useState(initial.skipped);
   const [status, setStatus] = useState<{ message: string; error?: boolean }>();
+  const [saveAndAdvance, setSaveAndAdvance] = useState(false);
   const [saving, startSave] = useTransition();
   const router = useRouter();
   const tags = [...new Set([...problemTags, ...initial.problems])];
@@ -46,6 +47,7 @@ export function ReviewForm({
     };
 
     setStatus(undefined);
+    setSaveAndAdvance(advance);
     startSave(async () => {
       try {
         const result = await save(rating);
@@ -60,7 +62,9 @@ export function ReviewForm({
         setStatus({ message: "Review saved." });
         if (advance) {
           if (nextId) document.getElementById(nextId)?.focus();
-          else if (nextPage) router.push(nextPage);
+          else if (nextPage) {
+            startSave(() => router.push(nextPage));
+          }
         }
       } catch {
         setStatus({
@@ -79,6 +83,7 @@ export function ReviewForm({
       className="mt-5 border-t border-stone-200 pt-4 text-sm"
       method="post"
       onSubmit={submit}
+      aria-busy={saving}
     >
       <h3 className="font-semibold">Human review</h3>
       {reviewer && (
@@ -159,17 +164,21 @@ export function ReviewForm({
         <div className="flex flex-wrap gap-2">
           <button
             type="submit"
-            className="rounded-md bg-stone-900 px-3 py-1.5 font-medium text-white disabled:opacity-50"
+            className="cursor-pointer rounded-md bg-stone-900 px-3 py-1.5 font-medium text-white active:bg-stone-700 disabled:cursor-wait disabled:opacity-50"
           >
-            Save review
+            {saving && !saveAndAdvance ? "Saving…" : "Save review"}
           </button>
           {(nextId || nextPage) && (
             <button
               type="submit"
               value="next"
-              className="rounded-md border border-stone-300 px-3 py-1.5 font-medium disabled:opacity-50"
+              className="cursor-pointer rounded-md border border-stone-300 px-3 py-1.5 font-medium active:bg-stone-100 disabled:cursor-wait disabled:opacity-50"
             >
-              Save &amp; next
+              {saving && saveAndAdvance
+                ? status?.message
+                  ? "Opening next…"
+                  : "Saving…"
+                : "Save & next"}
             </button>
           )}
         </div>
@@ -178,7 +187,7 @@ export function ReviewForm({
         role={status?.error ? "alert" : "status"}
         className={`mt-2 min-h-5 ${status?.error ? "text-red-700" : "text-stone-600"}`}
       >
-        {saving ? "Saving review…" : status?.message}
+        {saving && !status ? "Saving review…" : status?.message}
       </p>
     </form>
   );

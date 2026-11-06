@@ -114,8 +114,10 @@ test("an eval admin opens a blind preview of a completed generation", async () =
     authorize: async (userId) => userId === "admin",
     project: "svg-ai-agent",
     apiKey: "fixture",
-    fetch: async (input) => {
+    apiUrl: "https://api-eu.braintrust.dev",
+    fetch: async (input, init) => {
       const url = new URL(String(input));
+      assert.equal(url.origin, "https://api-eu.braintrust.dev");
       if (url.pathname === "/v1/project")
         return Response.json({
           objects: [{ id: projectId, name: "svg-ai-agent" }],
@@ -129,7 +131,7 @@ test("an eval admin opens a blind preview of a completed generation", async () =
           ],
         });
       }
-      if (url.pathname === "/btql") return Response.json({ data: [] });
+      assert.equal(init?.method, "POST");
       assert.equal(url.pathname, `/v1/experiment/${firstRun}/fetch`);
       return Response.json({
         events: [
@@ -277,7 +279,9 @@ test("saving writes only the selected output's human review under the authentica
   const source =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
   const outputSha256 = createHash("sha256").update(source).digest("hex");
-  const feedback: unknown[] = [];
+  const feedback: Array<{
+    feedback: Array<{ metadata: unknown }>;
+  }> = [];
   let status = "completed";
   const review = createEvalReview({
     authorize: async (userId) => userId === "admin",
@@ -293,21 +297,21 @@ test("saving writes only the selected output's human review under the authentica
         return Response.json({
           objects: [{ id: firstRun, project_id: projectId, name: "Run" }],
         });
-      if (pathname === "/btql")
-        return Response.json({
-          data: [
-            {
-              id: "circle-row",
-              experiment_id: firstRun,
-              input: {
-                input: {
-                  messages: [{ role: "user", content: "Draw a circle" }],
-                },
-              },
-              output: { status, source },
-            },
-          ],
-        });
+      const row = {
+        id: "circle-row",
+        experiment_id: firstRun,
+        input: {
+          input: { messages: [{ role: "user", content: "Draw a circle" }] },
+        },
+        output: { status, source },
+        audit_data: feedback.map(({ feedback: [entry] }, index) => ({
+          _xact_id: String(index),
+          metadata: entry.metadata,
+        })),
+      };
+      if (pathname === "/btql") return Response.json({ data: [row] });
+      if (pathname === `/v1/experiment/${firstRun}/fetch`)
+        return Response.json({ events: [row] });
       assert.equal(pathname, `/v1/experiment/${firstRun}/feedback`);
       feedback.push(JSON.parse(String(init?.body)));
       return Response.json({ status: "success" });
@@ -371,6 +375,15 @@ test("saving writes only the selected output's human review under the authentica
       ],
     },
   ]);
+  assert.deepEqual((await review.getRun("admin", firstRun)).cases[0].review, {
+    ...rating,
+    reviewer: "admin",
+  });
+  assert.deepEqual((await review.listRuns("admin")).runs[0].progress, {
+    completed: 1,
+    rated: 1,
+    skipped: 0,
+  });
 });
 
 test("opening a run restores the latest matching synced review without automated scores", async () => {
@@ -386,17 +399,14 @@ test("opening a run restores the latest matching synced review without automated
     reviewer: "Local reviewer",
   };
   const auditRow = (xact: string, notes: string) => ({
-    id: "reviewed-row",
     _xact_id: xact,
-    audit_data: {
-      action: "merge",
-      metadata: {
-        humanReview: {
-          ...synced,
-          notes,
-          outputSha256,
-          rubricVersion: "human-visual-quality-v1",
-        },
+    audit_data: { action: "merge" },
+    metadata: {
+      humanReview: {
+        ...synced,
+        notes,
+        outputSha256,
+        rubricVersion: "human-visual-quality-v1",
       },
     },
   });
@@ -404,7 +414,7 @@ test("opening a run restores the latest matching synced review without automated
     authorize: async () => true,
     project: "svg-ai-agent",
     apiKey: "fixture",
-    fetch: async (input, init) => {
+    fetch: async (input) => {
       const { pathname } = new URL(String(input));
       if (pathname === "/v1/project")
         return Response.json({
@@ -414,17 +424,7 @@ test("opening a run restores the latest matching synced review without automated
         return Response.json({
           objects: [{ id: firstRun, project_id: projectId, name: "Run" }],
         });
-      if (pathname === "/btql") {
-        const { audit_log, query } = JSON.parse(String(init?.body));
-        assert.equal(audit_log, true);
-        if (!query.cursor)
-          return Response.json(
-            { data: [auditRow("002", synced.notes)] },
-            { headers: { "x-bt-cursor": "more-history" } },
-          );
-        assert.equal(query.cursor, "more-history");
-        return Response.json({ data: [auditRow("001", "Older note")] });
-      }
+      assert.equal(pathname, `/v1/experiment/${firstRun}/fetch`);
       return Response.json({
         events: [
           {
@@ -434,6 +434,10 @@ test("opening a run restores the latest matching synced review without automated
               input: { messages: [{ role: "user", content: "Draw a square" }] },
             },
             output: { status: "completed", source },
+            audit_data: [
+              auditRow("002", synced.notes),
+              auditRow("001", "Older note"),
+            ],
             scores: {
               human_visual_quality: 0.8,
               human_acceptable: 0,
@@ -461,7 +465,7 @@ test("the directory counts eligible completed outputs and separates rated from s
   const source =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
   const outputSha256 = createHash("sha256").update(source).digest("hex");
-  const row = (id: string) => ({
+  const row = (id: string, audit_data: unknown[] = []) => ({
     id,
     experiment_id: firstRun,
     is_root: true,
@@ -469,27 +473,24 @@ test("the directory counts eligible completed outputs and separates rated from s
       input: { messages: [{ role: "user", content: "Draw a square" }] },
     },
     output: { status: "completed", source },
+    audit_data,
   });
   const audit = (
-    id: string,
     quality: number | null,
     skipped = false,
     hash = outputSha256,
   ) => ({
-    id,
     _xact_id: "002",
-    audit_data: {
-      metadata: {
-        humanReview: {
-          quality,
-          skipped,
-          acceptable: skipped ? null : true,
-          problems: [],
-          notes: "",
-          reviewer: "Reviewer",
-          rubricVersion: "human-visual-quality-v1",
-          outputSha256: hash,
-        },
+    metadata: {
+      humanReview: {
+        quality,
+        skipped,
+        acceptable: skipped ? null : true,
+        problems: [],
+        notes: "",
+        reviewer: "Reviewer",
+        rubricVersion: "human-visual-quality-v1",
+        outputSha256: hash,
       },
     },
   });
@@ -508,32 +509,21 @@ test("the directory counts eligible completed outputs and separates rated from s
           objects: [{ id: firstRun, project_id: projectId, name: "Run" }],
         });
       assert.equal(url.pathname, "/btql");
-      const { query, audit_log } = JSON.parse(String(init?.body));
+      const { query } = JSON.parse(String(init?.body));
       assert.equal(query.from.args[0].value, firstRun);
-      if (audit_log) {
-        const entries = [
-          audit("rated", 4),
-          audit("skip", null, true),
-          audit("accept-only", null),
-          audit("stale", 5, false, "0".repeat(64)),
-        ];
-        return Response.json({
-          data: entries.filter((entry) =>
-            query.filter.right.value.includes(entry.id),
-          ),
-        });
-      }
       if (query.cursor) {
         if (query.cursor === "next-page")
           return Response.json({ data: [], cursor: "after-empty-page" });
         assert.equal(query.cursor, "after-empty-page");
-        return Response.json({ data: [row("stale"), row("rated")] });
+        return Response.json({
+          data: [row("stale", [audit(5, false, "0".repeat(64))]), row("rated")],
+        });
       }
       return Response.json({
         data: [
-          row("rated"),
-          row("skip"),
-          row("accept-only"),
+          row("rated", [audit(4)]),
+          row("skip", [audit(null, true)]),
+          row("accept-only", [audit(null)]),
           { ...row("failed"), output: { status: "failed", source } },
           { ...row("child"), is_root: false },
           { ...row("other-run"), experiment_id: secondRun },
