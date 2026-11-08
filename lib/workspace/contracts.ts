@@ -6,7 +6,7 @@ export const MAX_SVG_LENGTH = 48_000;
 export const MAX_REQUEST_BYTES = 96_000;
 export const MAX_RESPONSE_BYTES = 1_500_000;
 
-export const messageSchema = z
+const messageSchema = z
   .object({
     role: z.enum(["user", "assistant"]),
     content: z.string().trim().min(1).max(MAX_PROMPT_LENGTH),
@@ -60,7 +60,7 @@ export const generationUsageSchema = z
 
 export type GenerationUsage = z.infer<typeof generationUsageSchema>;
 
-export const previewSvgSchema = svgDocumentSchema.pick({
+const previewSvgSchema = svgDocumentSchema.pick({
   source: true,
   width: true,
   height: true,
@@ -152,6 +152,10 @@ export const stepTraceSchema = z
   .strict();
 export type StepTrace = z.infer<typeof stepTraceSchema>;
 
+export const responseFieldsSchema = z
+  .object({ step: z.number().int().min(1).max(6), text: z.string().max(2000) })
+  .strict();
+
 export const generationEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("retrieval"), detail: retrievalSchema }).strict(),
   z
@@ -171,13 +175,7 @@ export const generationEventSchema = z.discriminatedUnion("type", [
       message: z.string().trim().min(1).max(2000),
     })
     .strict(),
-  z
-    .object({
-      type: z.literal("response"),
-      step: z.number().int().min(1).max(6),
-      text: z.string().max(2000),
-    })
-    .strict(),
+  responseFieldsSchema.extend({ type: z.literal("response") }),
   z.object({ type: z.literal("step"), detail: stepTraceSchema }).strict(),
   z.object({ type: z.literal("tool"), call: toolTraceSchema }).strict(),
   z.object({ type: z.literal("preview"), svg: previewSvgSchema }).strict(),

@@ -23,7 +23,7 @@ const bundle = await build({
           "chat-panel.tsx": ["ChatPanel", "  const history ="],
           "collection-manager.tsx": [
             "CollectionManager",
-            "  const [collections, setCollections]",
+            "  const { collections, setCollections, error, setError }",
           ],
         };
         builder.onLoad(

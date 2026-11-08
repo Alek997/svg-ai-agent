@@ -9,7 +9,7 @@ import { evalConfig } from "./config";
 import { judgePrompt } from "./judge-prompt";
 import type { EvalCase, Score, Scorer } from "./types";
 
-export const judgmentSchema = z
+const judgmentSchema = z
   .object({
     checks: z
       .array(
@@ -27,7 +27,7 @@ export const judgmentSchema = z
   .strict();
 
 // Validate before handing untrusted XML to a renderer. Bound raster size too.
-export async function renderSvg(source: string): Promise<Buffer> {
+export async function renderJudgeSvg(source: string): Promise<Buffer> {
   const png = await renderSafeSvg(source, evalConfig.judge.imageSize);
   // Bake in the backdrop promised by judgePrompt. Transparent black artwork
   // otherwise disappears when an image consumer composites it against black.
@@ -139,9 +139,9 @@ export function createVisionScorer(
       }
       try {
         const start = performance.now();
-        const images = [await renderSvg(output.source)];
+        const images = [await renderJudgeSvg(output.source)];
         if (item.input.currentSvg)
-          images.push(await renderSvg(item.input.currentSvg));
+          images.push(await renderJudgeSvg(item.input.currentSvg));
         const result = await judge(item, images);
         const score = scoreJudgment(
           item.expected.requirements,

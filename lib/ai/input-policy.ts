@@ -14,8 +14,8 @@ import {
   replyLanguageSchema,
 } from "./conversation-replies";
 
-export const POLICY_TIMEOUT_MS: number = policyConfig.timeoutMs;
-export const SCOPE_MODEL = modelDefaults.scope;
+const POLICY_TIMEOUT_MS: number = policyConfig.timeoutMs;
+const SCOPE_MODEL = modelDefaults.scope;
 
 export class InputPolicyError extends Error {
   constructor(

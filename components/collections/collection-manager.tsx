@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
-import type { CollectionSummary } from "@/lib/collections/contracts";
-import { collectionRequest } from "./client";
+import { useState } from "react";
+import { useCollectionList } from "./use-collection-list";
+import { collectionRequest, listCollections } from "./client";
 import {
   CreateCollection,
   collectionButton as button,
@@ -9,21 +9,18 @@ import {
 import { SelectedCollection, type CollectionPage } from "./selected-collection";
 
 export function CollectionManager() {
-  const [collections, setCollections] = useState<CollectionSummary[]>([]);
+  const { collections, setCollections, error, setError } = useCollectionList();
   const [selection, setSelection] = useState<{
     page: CollectionPage;
     version: number;
   } | null>(null);
   const page = selection?.page ?? null;
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [processing, setProcessing] = useState(false);
   async function refresh(id?: string, signal?: AbortSignal, opened = false) {
-    const listed = await collectionRequest<{
-      collections: CollectionSummary[];
-    }>("", undefined, signal);
+    const { collections } = await listCollections(signal);
     if (signal?.aborted) return;
-    setCollections(listed.collections);
+    setCollections(collections);
     if (id) {
       const page = await collectionRequest<CollectionPage>(
         `/${id}`,
@@ -37,21 +34,6 @@ export function CollectionManager() {
       }));
     }
   }
-  useEffect(() => {
-    const controller = new AbortController();
-    void collectionRequest<{ collections: CollectionSummary[] }>(
-      "",
-      undefined,
-      controller.signal,
-    )
-      .then((value) => setCollections(value.collections))
-      .catch((error) => {
-        if (!controller.signal.aborted) setError(error.message);
-      });
-    return () => {
-      controller.abort();
-    };
-  }, []);
   async function act(action: () => Promise<void>) {
     setBusy(true);
     setError(null);

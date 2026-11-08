@@ -1,9 +1,25 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { withDatabase } from "../db/client";
 import { svgResults, messages, conversations } from "../db/schema";
 import { safeSvgSchema } from "./validate-svg";
 import { publicIdSchema, publicSvgIdSchema } from "./public-id";
+
+type Database = Parameters<Parameters<typeof withDatabase>[0]>[0];
+
+function publicResult(
+  db: Database,
+  value: SQL<string> | typeof svgResults.publicId,
+  match: SQL,
+) {
+  return db
+    .select({ value })
+    .from(svgResults)
+    .innerJoin(messages, eq(messages.id, svgResults.assistantMessageId))
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(and(eq(conversations.private, false), match))
+    .limit(1);
+}
 
 // Select only markup: never load prompts, owners, descriptions or model metadata.
 export async function readPublicSvg(
@@ -11,21 +27,14 @@ export async function readPublicSvg(
   runDatabase = withDatabase,
 ): Promise<unknown | null> {
   return runDatabase(async (db) => {
-    const [row] = await db
-      .select({ source: sql<string>`${svgResults.document}->>'source'` })
-      .from(svgResults)
-      .innerJoin(messages, eq(messages.id, svgResults.assistantMessageId))
-      .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-      .where(
-        and(
-          eq(conversations.private, false),
-          publicIdSchema.safeParse(id).success
-            ? eq(svgResults.publicId, id)
-            : eq(svgResults.id, id),
-        ),
-      )
-      .limit(1);
-    return row?.source ?? null;
+    const [row] = await publicResult(
+      db,
+      sql<string>`${svgResults.document}->>'source'`,
+      publicIdSchema.safeParse(id).success
+        ? eq(svgResults.publicId, id)
+        : eq(svgResults.id, id),
+    );
+    return row?.value ?? null;
   });
 }
 
@@ -35,14 +44,12 @@ export async function resolvePublicId(
   runDatabase = withDatabase,
 ): Promise<string | null> {
   return runDatabase(async (db) => {
-    const [row] = await db
-      .select({ publicId: svgResults.publicId })
-      .from(svgResults)
-      .innerJoin(messages, eq(messages.id, svgResults.assistantMessageId))
-      .innerJoin(conversations, eq(conversations.id, messages.conversationId))
-      .where(and(eq(conversations.private, false), eq(svgResults.id, id)))
-      .limit(1);
-    return row?.publicId ?? null;
+    const [row] = await publicResult(
+      db,
+      svgResults.publicId,
+      eq(svgResults.id, id),
+    );
+    return row?.value ?? null;
   });
 }
 

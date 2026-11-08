@@ -1,3 +1,4 @@
+import { readBoundedText } from "../http/read-bounded-text";
 import { groupedDetails, finishDetails } from "./state";
 import { z } from "zod";
 import {
@@ -8,41 +9,27 @@ import {
 import { GenerationRequestError } from "../workspace/generate-client";
 
 // Run details can contain SVG tool arguments. Bound the whole paginated response.
-export async function fetchConversationJson<T>(
+async function fetchConversationJson<T>(
   url: string,
   schema: z.ZodType<T>,
   options: RequestInit = {},
 ): Promise<T> {
   const response = await fetch(url, { ...options, cache: "no-store" });
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("The server returned an empty response.");
-  const decoder = new TextDecoder();
-  let text = "";
-  let bytes = 0;
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > 16_000_000) {
-        await reader.cancel();
-        throw new Error("Saved history exceeded its response limit.");
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    const json = JSON.parse(text);
-    if (!response.ok)
-      throw new GenerationRequestError(
-        typeof json.error === "string"
-          ? json.error
-          : "Saved history is unavailable.",
-        response.status,
-      );
-    return schema.parse(json);
-  } finally {
-    reader.releaseLock();
-  }
+  if (!response.body) throw new Error("The server returned an empty response.");
+  const text = await readBoundedText(
+    response.body,
+    16_000_000,
+    () => new Error("Saved history exceeded its response limit."),
+  );
+  const json = JSON.parse(text);
+  if (!response.ok)
+    throw new GenerationRequestError(
+      typeof json.error === "string"
+        ? json.error
+        : "Saved history is unavailable.",
+      response.status,
+    );
+  return schema.parse(json);
 }
 export async function loadConversation(
   id: string,

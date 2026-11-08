@@ -14,7 +14,7 @@ import {
 } from "../evals/scorers";
 import {
   createVisionScorer,
-  renderSvg,
+  renderJudgeSvg,
   scoreJudgment,
 } from "../evals/vision-scorer";
 
@@ -218,8 +218,10 @@ test("fidelity uses checklist verdicts, rejects missing/duplicate checks and fla
 });
 
 test("renderer rejects unsafe SVG and produces bounded PNGs", async () => {
-  await assert.rejects(renderSvg(svg.replace("<circle", "<script/><circle")));
-  const png = await renderSvg(svg);
+  await assert.rejects(
+    renderJudgeSvg(svg.replace("<circle", "<script/><circle")),
+  );
+  const png = await renderJudgeSvg(svg);
   const metadata = await sharp(png).metadata();
   assert.equal(metadata.format, "png");
   assert.equal(metadata.width, 512);
@@ -230,7 +232,7 @@ test("renderer rejects unsafe SVG and produces bounded PNGs", async () => {
 test("judge renderer keeps black outlines visible on an opaque gray backdrop", async () => {
   const source =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="218" cy="218" r="132" fill="none" stroke="#000000" stroke-width="24"/><line x1="313" y1="313" x2="427" y2="427" stroke="#000000" stroke-width="30" stroke-linecap="round"/></svg>';
-  const png = await renderSvg(source);
+  const png = await renderJudgeSvg(source);
   const { data, info } = await sharp(png)
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -246,7 +248,7 @@ test("judge renderer keeps black outlines visible on an opaque gray backdrop", a
 });
 
 test("judge backdrop fills resize padding and preserves white artwork and explicit backgrounds", async () => {
-  const png = await renderSvg(
+  const png = await renderJudgeSvg(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="100" height="100" fill="white"/><rect x="100" width="100" height="100" fill="black"/></svg>',
   );
   const { data, info } = await sharp(png)

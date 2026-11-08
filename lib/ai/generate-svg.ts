@@ -25,6 +25,42 @@ type SvgGenerationParameters = {
   collectionRetrievalContext?: Retrieval;
 };
 
+function completedStepDescription(
+  stepTools: string[],
+  finishReason: string,
+  text: string,
+) {
+  let description = stepTools.length
+    ? `Called ${stepTools.join(", ")}; the tool results are available for the next model step.`
+    : "The model returned its final response.";
+  if (finishReason === "length")
+    description = "The model reached the output token limit for this step.";
+  if (finishReason === "error")
+    description = "The model stopped with an error.";
+  // Only a public response message may be shown. Never forward reasoning
+  // deltas, provider metadata or an unparsed model transcript.
+  if (!stepTools.length) {
+    try {
+      const response: unknown = JSON.parse(text);
+      if (
+        response &&
+        typeof response === "object" &&
+        "message" in response &&
+        typeof response.message === "string"
+      ) {
+        description = response.message.trim().slice(0, 2000) || description;
+      }
+    } catch {
+      /* A partial/invalid response is still checked by the final validator. */
+    }
+  }
+  return description;
+}
+
+function isTracedTool(name: string) {
+  return name === "querySvg" || name === "validateSvg" || name === "webSearch";
+}
+
 export async function streamSvgGenerationOnServer({
   svgGenerationRequest,
   signal,
@@ -102,11 +138,7 @@ export async function streamSvgGenerationOnServer({
     }
     if (part.type === "tool-input-start") {
       toolInputs.set(part.id, { name: part.toolName, text: "" });
-      if (
-        part.toolName === "querySvg" ||
-        part.toolName === "validateSvg" ||
-        part.toolName === "webSearch"
-      ) {
+      if (isTracedTool(part.toolName)) {
         onEvent?.({ type: "activity", step, action: part.toolName });
         onEvent?.({
           type: "tool",
@@ -138,11 +170,7 @@ export async function streamSvgGenerationOnServer({
       part.type === "tool-result" ||
       part.type === "tool-error"
     ) {
-      if (
-        part.toolName === "querySvg" ||
-        part.toolName === "validateSvg" ||
-        part.toolName === "webSearch"
-      ) {
+      if (isTracedTool(part.toolName)) {
         const parsed = toolTraceSchema.safeParse({
           id: part.toolCallId,
           name: part.toolName,
@@ -188,30 +216,11 @@ export async function streamSvgGenerationOnServer({
         forceUpdate: true,
         containsResponseMetadata: true,
       });
-      let description = stepTools.length
-        ? `Called ${stepTools.join(", ")}; the tool results are available for the next model step.`
-        : "The model returned its final response.";
-      if (part.finishReason === "length")
-        description = "The model reached the output token limit for this step.";
-      if (part.finishReason === "error")
-        description = "The model stopped with an error.";
-      // Only a public response message may be shown. Never forward reasoning
-      // deltas, provider metadata or an unparsed model transcript.
-      if (!stepTools.length) {
-        try {
-          const response: unknown = JSON.parse(text);
-          if (
-            response &&
-            typeof response === "object" &&
-            "message" in response &&
-            typeof response.message === "string"
-          ) {
-            description = response.message.trim().slice(0, 2000) || description;
-          }
-        } catch {
-          /* A partial/invalid response is still checked by the final validator. */
-        }
-      }
+      const description = completedStepDescription(
+        stepTools,
+        part.finishReason,
+        text,
+      );
       onEvent?.({
         type: "step",
         detail: { step, status: "completed", description },

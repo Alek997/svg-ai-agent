@@ -1,4 +1,7 @@
 "use client";
+
+import type { CollectionSummary } from "@/lib/collections/contracts";
+
 export async function collectionRequest<T>(
   path = "",
   body?: unknown,
@@ -20,4 +23,12 @@ export async function collectionRequest<T>(
   if (!response.ok)
     throw new Error(value.error || "Collection request failed. Please retry.");
   return value;
+}
+
+export function listCollections(signal?: AbortSignal) {
+  return collectionRequest<{ collections: CollectionSummary[] }>(
+    "",
+    undefined,
+    signal,
+  );
 }

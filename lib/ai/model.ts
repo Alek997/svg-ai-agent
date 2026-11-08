@@ -5,7 +5,7 @@ import { z } from "zod";
 import { modelDefaults } from "./config";
 import { ModelConfigurationError } from "./errors";
 
-export const DEFAULT_OPENAI_MODEL = modelDefaults.drawing;
+const DEFAULT_OPENAI_MODEL = modelDefaults.drawing;
 
 const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().min(1),

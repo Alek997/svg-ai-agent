@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { renderSvg } from "../lib/svg/render-svg";
-import { evalCaseSchema } from "./types";
+import { savedReviewResultSchema } from "./types";
 
 import {
   problemTags,
@@ -14,17 +14,7 @@ import { outputHash } from "../lib/eval-review/ratings";
 export { reviewRubricVersion } from "../lib/eval-review/contracts";
 
 export const savedRunSchema = z.object({
-  results: z.array(
-    z.object({
-      input: evalCaseSchema,
-      output: z
-        .object({
-          status: z.enum(["completed", "failed"]),
-          source: z.string().nullable(),
-        })
-        .nullish(),
-    }),
-  ),
+  results: z.array(savedReviewResultSchema),
 });
 
 export function escapeHtml(value: string) {

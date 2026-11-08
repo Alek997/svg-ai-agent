@@ -1,14 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import type { z } from "zod";
-import { listConversations } from "@/lib/conversations/client";
-import type { conversationListSchema } from "@/lib/conversations/contracts";
+import { useConversationList } from "./use-conversation-list";
 import { useSvgBlobRef } from "@/lib/workspace/use-svg-blob-ref";
 import type { SvgDocument } from "@/lib/workspace/types";
 
-type Item = z.infer<typeof conversationListSchema>["conversations"][number];
 function Artwork({ document }: { document: SvgDocument }) {
   const image = useSvgBlobRef<HTMLImageElement>(document.source, "src");
   // The API validates stored SVG; image rendering keeps it outside the page DOM.
@@ -24,57 +20,12 @@ function Artwork({ document }: { document: SvgDocument }) {
   );
 }
 export function ConversationGallery() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    void listConversations(controller.signal, undefined, true)
-      .then((page) => {
-        if (controller.signal.aborted) return;
-        setItems(page.conversations);
-        setCursor(page.nextCursor);
-        setError(null);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted)
-          setError(
-            error instanceof Error
-              ? error.message
-              : "Your artwork could not be loaded.",
-          );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [reload]);
-  async function loadMore() {
-    if (!cursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const page = await listConversations(undefined, cursor, true);
-      setItems((previous) => [
-        ...previous,
-        ...page.conversations.filter(
-          (item) => !previous.some((saved) => saved.id === item.id),
-        ),
-      ]);
-      setCursor(page.nextCursor);
-      setError(null);
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "More conversations could not be loaded.",
-      );
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const { items, cursor, loading, loadingMore, error, loadMore, reloadList } =
+    useConversationList({
+      includeArtwork: true,
+      initialError: "Your artwork could not be loaded.",
+      paginationError: "More conversations could not be loaded.",
+    });
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-8">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -101,10 +52,7 @@ export function ConversationGallery() {
             type="button"
             onClick={() => {
               if (items.length) void loadMore();
-              else {
-                setLoading(true);
-                setReload((value) => value + 1);
-              }
+              else reloadList();
             }}
             className="ml-2 underline"
           >

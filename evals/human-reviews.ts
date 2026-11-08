@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import { z } from "zod";
-import { evalCaseSchema } from "./types";
+import { savedReviewResultSchema } from "./types";
 import {
   outputHashSchema,
   ratingFieldsSchema,
@@ -62,19 +62,7 @@ export const reviewRunSchema = z.object({
     experimentName: z.string().min(1),
     experimentUrl: z.string().url().optional(),
   }),
-  results: z
-    .array(
-      z.object({
-        input: evalCaseSchema,
-        output: z
-          .object({
-            status: z.enum(["completed", "failed"]),
-            source: z.string().nullable(),
-          })
-          .nullish(),
-      }),
-    )
-    .max(1000),
+  results: z.array(savedReviewResultSchema).max(1000),
 });
 
 export function parseHumanReviews(text: string) {

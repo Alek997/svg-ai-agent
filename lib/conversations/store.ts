@@ -711,14 +711,7 @@ export function createConversationStore(
             conversations,
             eq(conversations.id, messages.conversationId),
           )
-          .where(
-            and(
-              eq(conversations.ownerId, ownerId),
-              eq(conversations.private, false),
-              eq(messages.status, "completed"),
-              sqlToken(token),
-            ),
-          )
+          .where(feedbackPermissionFilter(ownerId, token))
           .limit(1);
         if (
           !found ||
@@ -751,14 +744,7 @@ export function createConversationStore(
               conversations,
               eq(conversations.id, messages.conversationId),
             )
-            .where(
-              and(
-                eq(conversations.ownerId, ownerId),
-                eq(conversations.private, false),
-                eq(messages.status, "completed"),
-                sqlToken(token),
-              ),
-            )
+            .where(feedbackPermissionFilter(ownerId, token))
             .for("update", { of: conversations });
           const found = candidates[0]?.message;
           if (
@@ -795,6 +781,15 @@ export function createConversationStore(
     },
   };
 }
+function feedbackPermissionFilter(ownerId: string, token: string) {
+  return and(
+    eq(conversations.ownerId, ownerId),
+    eq(conversations.private, false),
+    eq(messages.status, "completed"),
+    sqlToken(token),
+  );
+}
+
 function sqlToken(token: string) {
   return sql`${messages.details}->>'feedbackToken' = ${token}`;
 }

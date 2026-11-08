@@ -36,7 +36,7 @@ export async function lockCollection(
   return row;
 }
 // Serialize per-owner creation even when they have no rows yet.
-export async function lockOwner(tx: CollectionTransaction, ownerId: string) {
+async function lockOwner(tx: CollectionTransaction, ownerId: string) {
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${ownerId}, 0))`,
   );

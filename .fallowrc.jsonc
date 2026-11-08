@@ -1,0 +1,9 @@
+{
+  // Browser clients are bundled through esbuild's entryPoints and alias options.
+  "supportEntry": [
+    "tests/browser/client.tsx",
+    "tests/browser/effects-client.tsx",
+    "tests/browser/effects-server.mts",
+    "tests/browser/link.tsx",
+  ],
+}

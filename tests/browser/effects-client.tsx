@@ -224,24 +224,21 @@ async function run() {
       !fixture.textContent?.includes("125%"),
     "Switching conversations resets draft and canvas state",
   );
-  await act(async () => {
-    const moved = new Promise<void>((resolve) =>
-      window.addEventListener("popstate", () => resolve(), { once: true }),
-    );
-    window.history.back();
-    await moved;
-  });
+  async function moveHistory(direction: "back" | "forward") {
+    await act(async () => {
+      const moved = new Promise<void>((resolve) =>
+        window.addEventListener("popstate", () => resolve(), { once: true }),
+      );
+      window.history[direction]();
+      await moved;
+    });
+  }
+  await moveHistory("back");
   check(
     fixture.textContent?.includes("a.svg"),
     "Browser Back opens the previous conversation",
   );
-  await act(async () => {
-    const moved = new Promise<void>((resolve) =>
-      window.addEventListener("popstate", () => resolve(), { once: true }),
-    );
-    window.history.forward();
-    await moved;
-  });
+  await moveHistory("forward");
   check(
     fixture.textContent?.includes("b.svg"),
     "Browser Forward opens the next conversation",

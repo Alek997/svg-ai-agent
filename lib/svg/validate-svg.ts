@@ -1,4 +1,4 @@
-import { SaxesParser } from "saxes";
+import { SaxesParser, type SaxesTagNS } from "saxes";
 import { z } from "zod";
 import { MAX_SVG_LENGTH } from "../workspace/contracts";
 
@@ -83,11 +83,60 @@ const attributes = new Set([
 const referenceAttributes = new Set(["fill", "stroke", "clip-path", "mask"]);
 const fragmentPaint = /^url\(#[A-Za-z_][\w.-]*\)$/;
 
-export class InvalidSvgError extends Error {
+class InvalidSvgError extends Error {
   constructor(
     message = "The SVG failed safety validation. Try a simpler description.",
   ) {
     super(message);
+  }
+}
+
+function fail(message: string): never {
+  throw new InvalidSvgError(message);
+}
+
+function readSvgDimensions(tag: SaxesTagNS) {
+  const viewBox = tag.attributes.viewBox?.value
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  if (!viewBox || viewBox.length !== 4 || !viewBox.every(Number.isFinite))
+    fail("The root needs a viewBox with four finite numbers.");
+  const [, , width, height] = viewBox;
+  if (width <= 0 || height <= 0 || width > 4096 || height > 4096)
+    fail("viewBox width and height must be positive and at most 4096.");
+  return { width, height };
+}
+
+function validateSvgAttributes(tag: SaxesTagNS, isRoot: boolean) {
+  for (const attribute of Object.values(tag.attributes)) {
+    if (
+      attribute.name === "xmlns" &&
+      isRoot &&
+      attribute.value === SVG_NAMESPACE
+    )
+      continue;
+    if (attribute.prefix || attribute.uri || !attributes.has(attribute.name))
+      fail(
+        `Unsupported attribute: ${attribute.name}. Use presentation attributes, no styles, href or event handlers.`,
+      );
+    const value = attribute.value.trim();
+    // No style, href, event handlers, embedded resources, or indirect CSS references.
+    if (/url\s*\(/i.test(value)) {
+      if (
+        !referenceAttributes.has(attribute.name) ||
+        !fragmentPaint.test(value)
+      )
+        fail(
+          "References must be local url(#id) in fill, stroke, clip-path or mask.",
+        );
+    }
+    if (
+      /\\|[\u0000-\u001f]|(?:https?:|data:|javascript:|file:|\/\/)/i.test(value)
+    )
+      fail(
+        "External resources, control characters and CSS escapes are forbidden.",
+      );
   }
 }
 
@@ -100,11 +149,6 @@ export function validateSvg(source: string) {
   let depth = 0;
   let count = 0;
   let dimensions: { width: number; height: number } | undefined;
-  const fail = (
-    message = "SVG is malformed or contains unsupported content.",
-  ) => {
-    throw new InvalidSvgError(message);
-  };
   parser.on("error", () =>
     fail("Malformed XML: check matching tags and quoted attributes."),
   );
@@ -123,49 +167,10 @@ export function validateSvg(source: string) {
     if (depth === 1) {
       if (tag.local !== "svg" || dimensions)
         fail("Use exactly one svg root element.");
-      const viewBox = tag.attributes.viewBox?.value
-        .trim()
-        .split(/[\s,]+/)
-        .map(Number);
-      if (!viewBox || viewBox.length !== 4 || !viewBox.every(Number.isFinite))
-        fail("The root needs a viewBox with four finite numbers.");
-      const [, , width, height] = viewBox!;
-      if (width <= 0 || height <= 0 || width > 4096 || height > 4096)
-        fail("viewBox width and height must be positive and at most 4096.");
-      dimensions = { width, height };
+      dimensions = readSvgDimensions(tag);
     } else if (tag.local === "svg")
       fail("Nested svg elements are unsupported; use g instead.");
-    for (const attribute of Object.values(tag.attributes)) {
-      if (
-        attribute.name === "xmlns" &&
-        depth === 1 &&
-        attribute.value === SVG_NAMESPACE
-      )
-        continue;
-      if (attribute.prefix || attribute.uri || !attributes.has(attribute.name))
-        fail(
-          `Unsupported attribute: ${attribute.name}. Use presentation attributes, no styles, href or event handlers.`,
-        );
-      const value = attribute.value.trim();
-      // No style, href, event handlers, embedded resources, or indirect CSS references.
-      if (/url\s*\(/i.test(value)) {
-        if (
-          !referenceAttributes.has(attribute.name) ||
-          !fragmentPaint.test(value)
-        )
-          fail(
-            "References must be local url(#id) in fill, stroke, clip-path or mask.",
-          );
-      }
-      if (
-        /\\|[\u0000-\u001f]|(?:https?:|data:|javascript:|file:|\/\/)/i.test(
-          value,
-        )
-      )
-        fail(
-          "External resources, control characters and CSS escapes are forbidden.",
-        );
-    }
+    validateSvgAttributes(tag, depth === 1);
   });
   parser.on("closetag", () => {
     depth--;

@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { CollectionSummary } from "@/lib/collections/contracts";
+import { useCollectionList } from "./use-collection-list";
 import { collectionRequest } from "./client";
 
 export function WorkspaceCollections({
@@ -20,21 +21,7 @@ export function WorkspaceCollections({
   onAdded: () => void;
   disabled: boolean;
 }) {
-  const [collections, setCollections] = useState<CollectionSummary[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    void collectionRequest<{ collections: CollectionSummary[] }>(
-      "",
-      undefined,
-      controller.signal,
-    )
-      .then((value) => setCollections(value.collections))
-      .catch((error) => {
-        if (!controller.signal.aborted) setError(error.message);
-      });
-    return () => controller.abort();
-  }, []);
+  const { collections, error } = useCollectionList();
   return (
     <div className="shrink-0 space-y-2 border-b border-stone-200 bg-white px-6 py-3 text-xs text-stone-600">
       {!conversationId ? (

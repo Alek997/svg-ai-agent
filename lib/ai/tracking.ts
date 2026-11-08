@@ -16,7 +16,7 @@ export function trackingEnabled() {
   );
 }
 
-export function getTrackingLogger() {
+function getTrackingLogger() {
   if (!trackingEnabled()) return undefined;
   logger ??= initLogger({
     projectName: process.env.BRAINTRUST_PROJECT?.trim() || "svg-ai-agent",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readBoundedText } from "../http/read-bounded-text";
 import { ModelConfigurationError } from "./errors";
 import {
   generationRequestSchema,
@@ -58,26 +59,12 @@ async function readSvgGenerationRequest(request: Request) {
   if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES) {
     throw new RequestError("Request is too large.", 413);
   }
-  const reader = request.body?.getReader();
-  if (!reader) throw new RequestError("Request body is required.", 400);
-  const decoder = new TextDecoder();
-  let text = "";
-  let bytes = 0;
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > MAX_REQUEST_BYTES) {
-        await reader.cancel();
-        throw new RequestError("Request is too large.", 413);
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-  } finally {
-    reader.releaseLock();
-  }
+  if (!request.body) throw new RequestError("Request body is required.", 400);
+  const text = await readBoundedText(
+    request.body,
+    MAX_REQUEST_BYTES,
+    () => new RequestError("Request is too large.", 413),
+  );
   let json: unknown;
   try {
     json = JSON.parse(text);

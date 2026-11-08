@@ -2,7 +2,7 @@ import { safeSvgSchema } from "../lib/svg/validate-svg";
 import { MAX_AGENT_STEPS } from "../lib/ai/svg-agent";
 import type { Scorer } from "./types";
 
-export const completionScorer: Scorer = {
+const completionScorer: Scorer = {
   name: "completion",
   run: (_, output) => ({
     name: "completion",

@@ -1,10 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
-import { listConversations } from "@/lib/conversations/client";
-import type { z } from "zod";
-import type { conversationSummarySchema } from "@/lib/conversations/contracts";
 
-type Summary = z.infer<typeof conversationSummarySchema>;
+import { useConversationList } from "./use-conversation-list";
+
 export function ConversationHistory({
   currentId,
   refreshKey,
@@ -14,50 +11,11 @@ export function ConversationHistory({
   refreshKey: number;
   onOpen: (id: string) => void;
 }) {
-  const [items, setItems] = useState<Summary[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [reload, setReload] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    void listConversations(controller.signal)
-      .then((page) => {
-        setItems(page.conversations);
-        setCursor(page.nextCursor);
-        setError(null);
-      })
-      .catch((error) => {
-        if (!controller.signal.aborted)
-          setError(
-            error instanceof Error
-              ? error.message
-              : "History could not be loaded.",
-          );
-      });
-    return () => controller.abort();
-  }, [refreshKey, reload]);
-  async function loadMore() {
-    if (!cursor || loading) return;
-    setLoading(true);
-    try {
-      const page = await listConversations(undefined, cursor);
-      setItems((previous) => [
-        ...previous,
-        ...page.conversations.filter(
-          (item) => !previous.some((saved) => saved.id === item.id),
-        ),
-      ]);
-      setCursor(page.nextCursor);
-      setError(null);
-    } catch (error) {
-      setError(
-        error instanceof Error ? error.message : "History could not be loaded.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { items, cursor, error, loadingMore, loadMore, reloadList } =
+    useConversationList({
+      refreshKey,
+      initialError: "History could not be loaded.",
+    });
   return (
     <details className="border-b border-stone-200 px-5 py-3 text-xs">
       <summary className="cursor-pointer font-medium text-stone-600">
@@ -88,20 +46,16 @@ export function ConversationHistory({
           <button
             type="button"
             onClick={loadMore}
-            disabled={loading}
+            disabled={loadingMore}
             className="px-2 py-2 underline"
           >
-            {loading ? "Loading…" : "More conversations"}
+            {loadingMore ? "Loading…" : "More conversations"}
           </button>
         )}
         {error && (
           <p role="alert" className="text-red-700">
             {error}{" "}
-            <button
-              type="button"
-              onClick={() => setReload((value) => value + 1)}
-              className="underline"
-            >
+            <button type="button" onClick={reloadList} className="underline">
               Retry loading history
             </button>
           </p>

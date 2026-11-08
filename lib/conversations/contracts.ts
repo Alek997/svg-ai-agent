@@ -4,6 +4,7 @@ import {
   MAX_PROMPT_LENGTH,
   svgDocumentSchema,
   stepTraceSchema,
+  responseFieldsSchema,
   toolTraceSchema,
   generationUsageSchema,
 } from "../workspace/contracts";
@@ -41,16 +42,10 @@ export const submissionSchema = z.discriminatedUnion("kind", [
 ]);
 export type Submission = z.infer<typeof submissionSchema>;
 
-export const flowEntrySchema = z.discriminatedUnion("kind", [
+const flowEntrySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("step"), detail: stepTraceSchema }).strict(),
   z.object({ kind: z.literal("tool"), call: toolTraceSchema }).strict(),
-  z
-    .object({
-      kind: z.literal("response"),
-      step: z.number().int().min(1).max(6),
-      text: z.string().max(2000),
-    })
-    .strict(),
+  responseFieldsSchema.extend({ kind: z.literal("response") }),
   z
     .object({
       kind: z.literal("preview"),

@@ -6,7 +6,7 @@ import {
 } from "../lib/workspace/contracts";
 import { safeSvgSchema } from "../lib/svg/validate-svg";
 
-export const evalCaseSchema = z
+const evalCaseSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/),
     tags: z.array(z.string().trim().min(1).max(80)).max(10),
@@ -72,3 +72,13 @@ export type Scorer = {
   name: string;
   run: (item: EvalCase, output: EvalOutput) => Score | Promise<Score>;
 };
+
+export const savedReviewResultSchema = z.object({
+  input: evalCaseSchema,
+  output: z
+    .object({
+      status: z.enum(["completed", "failed"]),
+      source: z.string().nullable(),
+    })
+    .nullish(),
+});
