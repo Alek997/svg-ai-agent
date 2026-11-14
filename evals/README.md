@@ -1,27 +1,25 @@
 # SVG evaluation suite
 
-The evaluator has two versioned local datasets. The original 15 regression cases
-remain in `cases.json`. `challenge-v2.json` adds 40 scenarios: 20 drawing/edit,
-10 policy/ambiguity, and 10 injection/tool cases. Scenario families stay wholly
-inside the development or holdout split. `scorer-calibration.json` contains three
+The default dataset, `cases.json`, contains 40 challenging scenarios: 20
+drawing/edit, 10 policy/ambiguity, and 10 injection/tool cases. Scenario families
+stay wholly inside the development or holdout split. `scorer-calibration.json` contains three
 fixed correct, subtly wrong, and wrong visual anchors; its transparent-canvas
 expectation is checked separately from the opaque vision image.
 
 ## Run locally
 
 ```bash
-# Validate the legacy regression cases. No models or uploads.
+# Validate all default cases. No models or uploads.
 npm run eval
 
-# Validate all challenge cases, or the untouched holdout subset.
-npm run eval -- --dataset evals/challenge-v2.json
-npm run eval -- --dataset evals/challenge-v2.json --split holdout
+# Validate the holdout subset.
+npm run eval -- --split holdout
 
-# Run three trials and an image-based judge on the challenge holdout.
-npm run eval -- --live --dataset evals/challenge-v2.json --split holdout --trials 3 --judge
+# Run three trials and an image-based judge on the holdout.
+npm run eval -- --live --split holdout --trials 3 --judge
 
 # Compare a candidate model against a saved run with identical eval settings.
-npm run eval -- --live --dataset evals/challenge-v2.json --split holdout --trials 3 --judge --model <model-id> --compare evals/runs/<reference-run>
+npm run eval -- --live --split holdout --trials 3 --judge --model <model-id> --compare evals/runs/<reference-run>
 ```
 
 Only `--live` calls models. Policy-mode cases call the production

@@ -2,8 +2,7 @@
 // Production generation keeps its own six-step/token/retry/deadline limits.
 export const evalConfig = {
   suiteVersion: "svg-eval-infrastructure-v2",
-  regressionDataset: "cases-v1",
-  challengeDataset: "challenge-v2",
+  datasetVersion: "cases-v3",
   maxCases: 100,
   judge: {
     rubricVersion: "visual-checklist-v2",

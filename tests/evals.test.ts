@@ -5,7 +5,6 @@ import { registerTelemetry } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import sharp from "sharp";
 import cases from "../evals/cases.json";
-import challengeCases from "../evals/challenge-v2.json";
 import calibrationCases from "../evals/scorer-calibration.json";
 import { datasetSchema, type EvalCase, type EvalOutput } from "../evals/types";
 import { createEvalTask } from "../evals/task";
@@ -31,7 +30,6 @@ import {
 } from "../evals/vision-scorer";
 
 const dataset = datasetSchema.parse(cases);
-const challenge = datasetSchema.parse(challengeCases);
 const item = dataset[0];
 const svg =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="30" fill="blue"/></svg>';
@@ -80,22 +78,20 @@ const output: EvalOutput = {
 };
 
 test("dataset rejects duplicate ids, unsafe starting artwork and invalid requests", () => {
-  assert.equal(dataset.length, 15);
-  assert.equal(challenge.length, 40);
-  assert.equal(challenge.filter((entry) => entry.expected.holdout).length, 11);
+  assert.equal(dataset.length, 40);
+  assert.equal(dataset.filter((entry) => entry.expected.holdout).length, 11);
   assert.deepEqual(
     Object.fromEntries(
       ["drawing_edit", "policy_ambiguity", "injection_tool"].map((category) => [
         category,
-        challenge.filter((entry) => entry.category === category).length,
+        dataset.filter((entry) => entry.category === category).length,
       ]),
     ),
     { drawing_edit: 20, policy_ambiguity: 10, injection_tool: 10 },
   );
   assert.equal(
-    challenge.find(
-      (entry) => entry.id === "policy-reject-explosive-instructions",
-    )?.expected.target,
+    dataset.find((entry) => entry.id === "policy-reject-explosive-instructions")
+      ?.expected.target,
     "reject",
   );
   assert.equal(datasetSchema.safeParse([item, item]).success, false);
@@ -169,7 +165,7 @@ test("task independently rejects unsafe final output while retaining incurred us
 });
 
 test("tool scorer checks read-before-edit, latest validation and step bounds", async () => {
-  const edit = dataset.find((item) => item.id === "edit-circle")!;
+  const edit = dataset.find((item) => item.id === "edit-move-label-only")!;
   assert.equal((await toolProtocolScorer.run(edit, output)).score, 0);
   const queried: EvalOutput = {
     ...output,
@@ -312,7 +308,7 @@ test("vision scorer supplies both images for edits, skips unsafe output and dist
       },
     };
   });
-  const edit = dataset.find((item) => item.id === "edit-circle")!;
+  const edit = dataset.find((item) => item.id === "edit-move-label-only")!;
   assert.equal((await scorer.run(edit, output)).score, 1);
   assert.equal(
     (await scorer.run(edit, { ...output, source: "<svg/>" })).score,
@@ -323,7 +319,7 @@ test("vision scorer supplies both images for edits, skips unsafe output and dist
       .score,
     0,
   );
-  const nongeneration = challenge.find(
+  const nongeneration = dataset.find(
     (entry) => entry.expected.target === "reject",
   )!;
   const beforeNongeneration = calls;
@@ -368,7 +364,7 @@ test("critical visual requirement failure cannot be averaged away", async () => 
 });
 
 test("policy task records observed rejects and replies without starting drawing", async () => {
-  const reject = challenge.find((entry) => entry.expected.target === "reject")!;
+  const reject = dataset.find((entry) => entry.expected.target === "reject")!;
   let generated = 0;
   const rejectTask = createEvalTask(
     undefined,
@@ -401,7 +397,7 @@ test("policy task records observed rejects and replies without starting drawing"
     status: "rejected" as const,
     policy: "rejected" as const,
   };
-  const allowed = challenge.find(
+  const allowed = dataset.find(
     (entry) => entry.mode === "policy" && entry.expected.target === "generate",
   )!;
   assert.equal(
@@ -409,9 +405,7 @@ test("policy task records observed rejects and replies without starting drawing"
     0,
   );
 
-  const clarify = challenge.find(
-    (entry) => entry.expected.target === "clarify",
-  )!;
+  const clarify = dataset.find((entry) => entry.expected.target === "clarify")!;
   const clarifyTask = createEvalTask(
     undefined,
     async () => {
@@ -431,13 +425,14 @@ test("policy task records observed rejects and replies without starting drawing"
   );
   const clarified = await clarifyTask(clarify);
   assert.equal(clarified.status, "clarified");
+  assert.equal((await toolProtocolScorer.run(clarify, clarified)).score, 1);
   assert.equal((await basicScorers[0].run(clarify, clarified)).score, 1);
   assert.equal((await basicScorers[3].run(clarify, clarified)).score, 1);
   assert.equal(generated, 0);
 });
 
 test("policy unavailable and policy-not-applicable remain distinct", async () => {
-  const policyCase = challenge.find((entry) => entry.mode === "policy")!;
+  const policyCase = dataset.find((entry) => entry.mode === "policy")!;
   const task = createEvalTask(undefined, undefined, {
     policy: async () => {
       throw new Error("provider details");
@@ -550,7 +545,7 @@ test("known-correct selective edit fixtures pass their rendered preservation che
     ],
   ];
   for (const [id, edit] of examples) {
-    const item = challenge.find((candidate) => candidate.id === id)!;
+    const item = dataset.find((candidate) => candidate.id === id)!;
     const before = item.input.currentSvg!;
     const after = edit(before);
     assert.notEqual(
@@ -567,7 +562,7 @@ test("known-correct selective edit fixtures pass their rendered preservation che
 });
 
 test("poisoned SVG data is carried as input while trace and output canaries catch copied instructions", async () => {
-  const item = challenge.find(
+  const item = dataset.find(
     (entry) => entry.id === "tool-edit-query-required",
   )!;
   let querySeen = false;
@@ -647,7 +642,7 @@ test("poisoned SVG data is carried as input while trace and output canaries catc
 });
 
 test("reports incomplete fidelity, failed noncritical checks, category rates and policy false rejection", () => {
-  const generateCase = challenge.find(
+  const generateCase = dataset.find(
     (entry) => entry.id === "draw-woven-ribbons",
   )!;
   const row = (
@@ -689,7 +684,7 @@ test("reports incomplete fidelity, failed noncritical checks, category rates and
     ],
   });
   assert.equal(judgeComplete.fullCasePass.passed, 1);
-  const renderCase = challenge.find(
+  const renderCase = dataset.find(
     (entry) => entry.expected.renderChecks.length > 0,
   )!;
   const renderFailure = buildEvalReport([renderCase], {
@@ -708,7 +703,7 @@ test("reports incomplete fidelity, failed noncritical checks, category rates and
     ],
   });
   assert.equal(renderFailure.fullCasePass.failed, 1);
-  const rejectCase = challenge.find(
+  const rejectCase = dataset.find(
     (entry) => entry.mode === "policy" && entry.expected.target === "reject",
   )!;
   const rejectedReport = buildEvalReport([rejectCase], {
@@ -731,7 +726,7 @@ test("reports incomplete fidelity, failed noncritical checks, category rates and
     ],
   });
   assert.equal(rejectedReport.fullCasePass.passed, 1);
-  const policyCase = challenge.find(
+  const policyCase = dataset.find(
     (entry) => entry.mode === "policy" && entry.expected.target === "generate",
   )!;
   const policyReport = buildEvalReport([policyCase], {
@@ -759,7 +754,7 @@ test("reports incomplete fidelity, failed noncritical checks, category rates and
     policyReport.fullCasePass.incomplete + policyReport.fullCasePass.passed,
     0,
   );
-  const injectionCase = challenge.find(
+  const injectionCase = dataset.find(
     (entry) => entry.category === "injection_tool",
   )!;
   const injectionRow = row(
