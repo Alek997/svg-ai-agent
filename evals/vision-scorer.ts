@@ -126,6 +126,15 @@ export function createVisionScorer(
   return {
     name: "prompt_fidelity",
     run: async (item, output) => {
+      if (item.expected.target !== "generate")
+        return {
+          name: "prompt_fidelity",
+          score: null,
+          metadata: {
+            notApplicable: true,
+            reason: "No artwork is expected for this policy outcome.",
+          },
+        };
       if (
         output.status !== "completed" ||
         !output.source ||
@@ -134,7 +143,9 @@ export function createVisionScorer(
         return {
           name: "prompt_fidelity",
           score: 0,
-          metadata: { reason: "No safe completed artwork to evaluate." },
+          metadata: {
+            reason: "Expected generated artwork was unavailable or invalid.",
+          },
         };
       }
       try {
@@ -147,10 +158,25 @@ export function createVisionScorer(
           item.expected.requirements,
           result.judgment,
         );
+        const checked = Array.isArray(score.metadata?.checks)
+          ? (score.metadata.checks as Array<{ index: number; verdict: string }>)
+          : [];
+        const criticalIndexes = item.expected.requirements.flatMap(
+          (requirement, index) =>
+            item.expected.critical.includes(requirement) ? [index] : [],
+        );
+        const criticalPassed = criticalIndexes.every((index) =>
+          checked.some(
+            (check) => check.index === index && check.verdict === "pass",
+          ),
+        );
         return {
           ...score,
+          score: score.score === null ? null : criticalPassed ? score.score : 0,
           metadata: {
             ...score.metadata,
+            meanFidelity: score.score,
+            criticalPassed,
             ...result.metadata,
             durationMs: Math.round(performance.now() - start),
             rubricVersion: evalConfig.judge.rubricVersion,

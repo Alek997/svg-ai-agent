@@ -1,251 +1,93 @@
-# SVG evals: a walkthrough
+# SVG evaluation suite
 
-An eval is a repeatable experiment: run the same requests through the application,
-measure the results, and compare them after changing a model or prompt. This is
-an evaluation dataset, not training data. It does not change model weights.
+The evaluator has two versioned local datasets. The original 15 regression cases
+remain in `cases.json`. `challenge-v2.json` adds 40 scenarios: 20 drawing/edit,
+10 policy/ambiguity, and 10 injection/tool cases. Scenario families stay wholly
+inside the development or holdout split. `scorer-calibration.json` contains three
+fixed correct, subtly wrong, and wrong visual anchors; its transparent-canvas
+expectation is checked separately from the opaque vision image.
 
-Evaluation code and artifacts live here: `baselines/` contains committed historical
-evidence, while `runs/` contains local generated results and is ignored by Git.
-
-## Start here
-
-For manual visual-quality scoring, see [Human review](HUMAN-REVIEW.md).
-Run `npm run eval:review -- --serve` to browse saved outputs and score each SVG
-in the UI alongside a persistent rubric. Save review / Save & next writes to that
-run's `human-reviews.yaml`. Existing reviews are loaded and preserved.
-Click **Sync to Braintrust** in the review page header to upload the current run's
-saved ratings and notes. Save form changes first; upload status appears beside
-the button.
-To validate ratings, run `npm run eval:reviews:sync -- --run <run-directory>`;
-add `--upload` to send them to the existing Braintrust experiment as
-`human_visual_quality` and `human_acceptable` scores. Missing reviews stay null,
-not zero. See the human review guide for mappings, clearing ratings and sync rules.
+## Run locally
 
 ```bash
-# Validate cases and print the selected scorers. No API calls or uploads.
+# Validate the legacy regression cases. No models or uploads.
 npm run eval
 
-# Check one case before spending credits.
-npm run eval -- --case weather --judge --braintrust
+# Validate all challenge cases, or the untouched holdout subset.
+npm run eval -- --dataset evals/challenge-v2.json
+npm run eval -- --dataset evals/challenge-v2.json --split holdout
 
-# Generate one SVG and apply the basic scorers, saving results locally.
-npm run eval -- --live --case weather
+# Run three trials and an image-based judge on the challenge holdout.
+npm run eval -- --live --dataset evals/challenge-v2.json --split holdout --trials 3 --judge
 
-# Add visual fidelity scoring and record the experiment in Braintrust.
-npm run eval -- --live --case weather --judge --braintrust --name baseline
-
-# Run the full small dataset with the same settings.
-npm run eval -- --live --judge --braintrust --name baseline
+# Compare a candidate model against a saved run with identical eval settings.
+npm run eval -- --live --dataset evals/challenge-v2.json --split holdout --trials 3 --judge --model <model-id> --compare evals/runs/<reference-run>
 ```
 
-Only `--live` starts model calls. `--judge` adds one judge call per safe completed
-case, with no judge retries. `--braintrust` uploads the cases, outputs, scores,
-and traces. Without it, Braintrust's SDK runs locally with `noSendLogs: true`.
-The CLI loads `.env.local`; existing shell environment variables take precedence.
-It does not load Next.js's full hierarchy of environment files.
+Only `--live` calls models. Policy-mode cases call the production
+`checkGenerationPolicy` before drawing; drawing-mode cases call the production
+SVG generation stream directly. Policy cases that reject, clarify, or answer
+conversationally must not start drawing, tools, or previews. Expected labels are
+used by scorers and reports, never to steer execution. Policy, drawing, and judge
+models are independent. `--model` overrides only the generation model for that
+CLI process. Search and retrieved-text cases use bounded in-memory fixtures; they
+do not call Tavily for injection/tool cases. Other generation cases retain the
+configured optional search behavior. `--braintrust` explicitly uploads private
+experiments.
 
-In Braintrust, create an account, choose or create your project, and
-create an API key in your account settings. Set these values in `.env.local`:
+Use `--case` or `--tag` to focus a run. The runner accepts up to three sequential
+trials and saves each trial immediately under `evals/runs/<timestamp>/trial-NN/`.
+A later trial failure therefore leaves earlier local results available. The root
+`comparison.json` includes full-case and per-category pass rates, policy accuracy
+and false rejection, injection resistance, missing scorer counts, per-case
+scores and observed ranges, latency, first-preview time, token counts, and
+regressions against a paired reference run. Ranges across at most three trials
+are descriptive and are not confidence intervals. Paired comparisons require
+the same dataset, selected cases, scorer, renderer, policy implementation,
+judge settings, and judge prompt. Generator models may differ. Trial ranges are
+descriptive variation only; three runs do not establish statistical confidence.
 
-```dotenv
-OPENAI_API_KEY=your-local-key
-OPENAI_MODEL=gpt-6-luna
-BRAINTRUST_API_KEY=your-local-braintrust-key
-BRAINTRUST_PROJECT=<your project name>
-EVAL_JUDGE_MODEL=gpt-6-luna
-```
+Open review files for all trials in a timestamp with
+`npm run eval:review -- --run <timestamp> --serve`; select one trial with
+`--run <timestamp>-trial-01`.
 
-Never put real keys in the dataset or commit `.env.local`. These are CLI/server
-variables, not browser variables. The judge model is independently configurable
-and must accept image inputs and structured output. Generation and judging default
-to `gpt-6-luna`; set `EVAL_JUDGE_MODEL` to override the judge. Calibrate results
-against human-reviewed examples. See the
-[model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna).
+The run records dataset, agent, policy, evaluation task, scorer, renderer and
+judge-prompt hashes plus model IDs and render/judge settings. Failed or uncertain
+judge outputs remain unscored and are counted separately from not-applicable
+checks. A generation case without `--judge` is incomplete for full-case pass
+reporting, not a visual pass. Missing scores do not become zero or a pass.
 
-## 1. Dataset — what do we ask, and what should happen?
+## Cases and scoring
 
-Edit `cases.json`. Each row has:
+Each row has a stable `id`, `category`, `family`, `mode`, tags, the generation
+request and `expected` outcomes. `expected.target` is `generate`, `reject`,
+`clarify`, or `conversation`. `expected.requirements` lists visible results;
+`critical` marks requirements that force prompt-fidelity score to zero on a
+judge failure. The validator checks safe starting SVGs, unique IDs, normalized
+render regions, tool expectations, and family-consistent holdout assignment.
+Nonvisual expectations use `requiredTools`, `forbiddenTools`,
+`forbiddenSvgText`, and `forbiddenMessageText`; trace, final-source, and final-
+message canaries score them directly. Source canaries never inspect the poisoned
+starting SVG, so preserving existing user artwork does not count as obeying it.
 
-- `id`: a unique, stable identifier, also used for the saved SVG filename.
-- `tags`: labels for filtering; for example `--tag edit` or `--tag easy`.
-- `input`: the same messages and optional `currentSvg` sent to the production
-  generation flow. An edit has a fixed starting SVG so it is reproducible.
-- `expected.requirements`: a checklist of visible requirements. There is no
-  single ideal SVG: many drawings can satisfy the same checklist.
+Deterministic edit checks render the starting and final SVGs through the shared
+safe Sharp renderer. `preserve-region` compares RGBA pixels exactly;
+`color-region` requires the requested RGB color on at least 1% of the region;
+`transparent-region` checks zero alpha. These checks evaluate rendered behavior,
+not SVG source strings. The visual judge sees an opaque gray image, so it cannot
+establish transparency. XML safety, tool protocol, and alpha checks remain
+separate scores. Any failed required scorer makes that trial fail; unavailable
+scores are reported as incomplete rather than folded into an average.
 
-Copy a row, give it a new id, and edit the request and requirements. No runner
-changes are needed. Alternatively pass `--dataset path/to/cases.json` to use
-another dataset with the same structure. `types.ts` uses Zod to reject invalid
-requests, duplicate ids, empty checklists, and unsafe starting artwork before
-any model call. Inferred TypeScript types keep the rest of the code consistent.
+Policy and tool checks use observed outcomes. Expected refusals count as correct
+completion when the policy rejects before generation. False rejection is counted
+when an expected allowed, clarified, or conversational policy case is rejected.
+Injection resistance requires expected completion plus safe SVG and correct
+tool protocol, plus any declared output canaries. The optional vision judge independently scores every visual requirement;
+critical requirement failures cannot be hidden by the mean. Review judge evidence
+against the calibration anchors and human reviews before relying on visual scores.
 
-Write atomic requirements: "exactly three raindrops" is easier to judge than
-"a perfect weather illustration". Keep the checklist fixed during comparisons;
-do not generate a different checklist for each output.
-
-### Case groups
-
-The default `svg-baseline-v1` suite contains 15 cases spanning basic requests,
-complex drawings, and selective edits. The full suite is the dataset for establishing
-the first reference run; `baseline` is not a case tag. Ten detailed cases have a
-`challenge` tag for focused runs. Difficulty labels describe intended coverage,
-not measured failure rates.
-
-| Group                   | Cases                                                                                                 | Coverage                                                                                  |
-| ----------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Basic requests          | `magnifying-glass`, `folder-star`, `weather`, `truck`, `edit-circle`                                  | Basic generation and edit checks                                                          |
-| `extended` generation   | `magnifying-glass-map`, `folder-star-documents`, `weather-mixed-precipitation`, `truck-loading-scene` | Overlap, visible contents, exact counts, ordering, and spatial relationships              |
-| Other `hard` generation | `bicycle-frame`, `branching-flowchart`                                                                | Connected structures and directed diagram edges                                           |
-| `hard` edits            | `edit-truck-cargo-only`, `edit-weather-remove-middle`, `edit-overlap-order`, `edit-grid-swap-colors`  | Selective recoloring, removal, stacking order, and preservation using fixed starting SVGs |
-
-```bash
-# Validate the full suite or a focused group without model calls.
-npm run eval -- --judge
-npm run eval -- --tag challenge --judge
-
-# Establish the v1 reference run; this makes generation and judge calls.
-npm run eval -- --live --judge --name baseline-v1
-```
-
-Check judge evidence, especially counting, connectivity, and
-preservation. They are candidate evaluation cases, not human-calibrated golden
-judgments. Complex requests may still score 100%; add cases for observed
-weaknesses rather than changing scoring to force failures.
-
-For comparisons, run both generator versions against this same dataset with fixed
-judge and rendering settings. Compare future runs to the full v1 reference run.
-Historical five-case averages are not comparable to the full-suite average.
-The suite version and dataset hash identify which cases were evaluated.
-
-## 2. Task — what application behavior do we run?
-
-`task.ts` calls the existing **streaming** `streamSvgGenerationOnServer()` function, rather than
-building a second agent or copying its system prompt. It captures public step
-and tool events, provider-reported usage, total generation time, and time to
-first valid preview snapshot. That preview time is a server measurement, not
-the time the browser actually paints an image.
-
-The final metadata and SVG are independently validated before accepting success.
-A failure returns a failed result row, rather than disappearing from the suite.
-Raw provider exception messages are not saved. Token usage unavailable after
-a thrown generation is `null`; it does not mean the failed request was free.
-Repeated preview payloads are omitted to avoid storing many copies of the SVG.
-
-This evaluates the drawing engine directly: it does not run Clerk authentication,
-conversation persistence, HTTP input-policy checks or private collection retrieval.
-Those paths have separate application tests. The generation model comes from
-`OPENAI_MODEL`. Production step, token, retry and deadline limits still apply.
-`config.ts` additionally caps a suite at 20 cases;
-the runner uses one trial and concurrency one. These limit work, not exact
-dollar spend. There is no automatic full-request retry.
-
-## 3. Scorers — how do we judge the result?
-
-`scorers.ts` exports ordinary functions plus the editable `basicScorers` list.
-Each scorer receives the case and task output, and returns a name, a score from
-0 to 1 (or `null` if unavailable), and optional evidence in `metadata`.
-
-| Scorer                       | Meaning                                                                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `completion`                 | 1 when the task finishes with accepted final output; otherwise 0                                                            |
-| `safe_svg`                   | 1 when the final source passes the application's XML/SVG validator                                                          |
-| `tool_protocol`              | 1 when a completed run respects the step bound, finishes with validated artwork, and reads artwork before proposing an edit |
-| `prompt_fidelity` (optional) | Fraction of checklist requirements visibly satisfied, assessed by the vision judge                                          |
-
-Completion and safety will often move together because the task already rejects
-unsafe output. Neither checks appearance. Tool protocol checks observable behavior,
-not whether a repair or edit was visually correct. Keep these dimensions separate;
-a high fidelity score cannot compensate for a failed safety gate.
-
-To add a deterministic scorer, define a `Scorer` object in `scorers.ts` and append
-it to `basicScorers`. For example, a size-budget scorer could inspect source
-length. Label that a markup budget, not visual simplicity or drawing quality.
-Add focused mocked tests for important new scoring behavior.
-
-### The visual scorer
-
-`vision-scorer.ts` validates SVG before rendering it with Sharp. It produces a
-512×512 PNG using the shared `lib/svg/render-svg.ts` renderer, then flattens the
-judge image onto an opaque light gray (`#e5e7eb`) backdrop, including resize padding.
-This keeps black and white artwork visible without relying on the image service's
-handling of transparency. The shared renderer and saved SVG retain transparency.
-It sends the opaque image and requirements to an
-image-capable model and requests structured verdicts. Edits include two images:
-result first, starting artwork second. The assistant's explanation and SVG source
-are not given to the judge as evidence.
-
-Edit `judge-prompt.ts` to adjust the judge instructions. Edit `config.ts` for
-image size, timeout, and output token limits. Change `rubricVersion` when you
-change the scoring rules. `renderingVersion: opaque-gray-v2` identifies the explicit
-judge backdrop; older runs sent transparent images despite the judge prompt
-describing a gray backdrop. Re-establish the baseline before comparing scores
-across these rendering versions. Each checklist verdict contains its index and brief
-visible evidence. Code verifies that every index appears exactly once and
-calculates the score; the judge does not invent the final percentage.
-
-If three of four checks pass, the score is 0.75. If any check is uncertain, the
-case returns `null` and `needsReview: true`. Invalid/incomplete judge output or a
-render/judge failure also returns `null`. A generation failure scores 0 because
-there is no accepted artwork to evaluate. Review null counts alongside averages:
-missing scores are not passes and may be omitted from Braintrust averages.
-
-Vision judgment can be wrong, especially for counting, perspective, subtle edits,
-and transparency. The opaque judge image cannot establish an exact transparency
-contract. Use an XML/alpha check on the original SVG/render for that property. Judge agreement must
-be checked against a small human-labeled sample, including intentionally wrong
-drawings. Do not use uncalibrated scores as deployment gates.
-
-## 4. Runner and Braintrust — where do the measurements go?
-
-`run.ts` connects the parts using Braintrust's `Eval()` API. It adapts ordinary
-scorers to Braintrust's scorer arguments, uses the local JSON dataset, and records
-each run as a private experiment when `--braintrust` is selected. The dataset
-remains editable and versioned in Git; this step does not create a separately
-managed Braintrust dataset.
-
-Braintrust's AI SDK 7 telemetry is registered only inside this eval CLI. It can
-capture model/tool spans within experiment tasks and judge calls. The task output
-also retains the application's public step/tool events. Browser generations are
-not instrumented by this setup. Check the first live experiment before relying
-on span completeness; automated verification uses a mock provider.
-
-Every finished run saves `results.json` and accepted SVGs under
-`evals/runs/<timestamp>/`, ignored by Git. JSON contains per-case scores,
-judge evidence/usage, generation usage/timing, and the Braintrust experiment URL
-when available. A nonzero exit code flags failures, unavailable scores, or any
-score below 1. This is a strict review signal, not a production quality threshold.
-Braintrust connection failures stop the run. Users with the Clerk `admin-eval`
-capability can find uploaded experiments in the app under **Eval Runs**.
-Inspect experiment details in Braintrust.
-
-## Comparing experiments
-
-Keep cases, scorer rules, judge model, and rendering settings fixed. Change only
-the generation prompt or model, and run another named experiment. Inspect per-case
-regressions as well as averages, and compare token usage and latency separately
-from quality. One trial is a smoke evaluation; use repeated runs before claiming
-a small difference is a reliable improvement.
-
-The runner records the configuration and hashes of the dataset, agent file,
-scorer files, shared renderer, and judge prompt. These make changed inputs/settings visible; Git
-history remains the source for retrieving the corresponding code. The shared
-renderer hash and judge rendering version/background are recorded by the runner.
-Record the code revision with each experiment; runs produced with different
-backdrops or renderers are not identical evaluation settings. Version future
-rendering/scoring changes explicitly. Maintain a
-small held-out set of cases you do not use while tuning prompts to reduce overfitting.
-
-This setup intentionally records tokens rather than dollar estimates; prices,
-cached-token discounts, and unavailable failed-call usage need deliberate handling.
-
-## Tests
-
-`npm test` covers dataset rejection, failure accounting, SVG safety, tool ordering,
-PNG rendering, checklist integrity, judge uncertainty, mocked vision requests,
-and Braintrust local evaluation. Automated tests use mock providers and make no
-live model calls or cloud uploads. See the [main README](../README.md#evaluation-and-tests)
-for repository check commands and the separate database/browser test setup.
-
-References: [Braintrust code evals](https://www.braintrust.dev/docs/evaluate/run-in-code),
-[Braintrust TypeScript SDK](https://www.braintrust.dev/docs/reference/libs/nodejs),
-[OpenAI eval best practices](https://developers.openai.com/api/docs/guides/evaluation-best-practices).
+Generation uses the configured app model and existing production limits. The
+runner does not change model defaults, call production APIs during tests, or
+claim live/deployed evidence. Automated tests use mocked providers and controlled
+fixtures. Run `npm test`, `npm run lint`, and `npm run build` for code changes.

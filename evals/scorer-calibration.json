@@ -1,0 +1,29 @@
+[
+  {
+    "id": "calibration-correct",
+    "label": "correct",
+    "request": "A centered blue circle with a black outline on a transparent background.",
+    "requirements": ["Blue circle", "Centered", "Black outline"],
+    "source": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"50\" cy=\"50\" r=\"30\" fill=\"blue\" stroke=\"black\" stroke-width=\"4\"/></svg>",
+    "expectedRequirementVerdicts": ["pass", "pass", "pass"],
+    "expectedAlphaBackground": true
+  },
+  {
+    "id": "calibration-subtly-wrong",
+    "label": "subtly_wrong",
+    "request": "A centered blue circle with a black outline on a transparent background.",
+    "requirements": ["Blue circle", "Centered", "Black outline"],
+    "source": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"60\" cy=\"50\" r=\"30\" fill=\"blue\" stroke=\"black\" stroke-width=\"4\"/></svg>",
+    "expectedRequirementVerdicts": ["pass", "fail", "pass"],
+    "expectedAlphaBackground": true
+  },
+  {
+    "id": "calibration-wrong",
+    "label": "wrong",
+    "request": "A centered blue circle with a black outline on a transparent background.",
+    "requirements": ["Blue circle", "Centered", "Black outline"],
+    "source": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"10\" y=\"10\" width=\"80\" height=\"80\" fill=\"red\"/></svg>",
+    "expectedRequirementVerdicts": ["fail", "pass", "fail"],
+    "expectedAlphaBackground": true
+  }
+]

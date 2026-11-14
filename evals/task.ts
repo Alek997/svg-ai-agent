@@ -3,6 +3,13 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import { streamSvgGenerationOnServer } from "../lib/ai/generate-svg";
 import { modelOutputSchema } from "../lib/ai/svg-agent";
+import {
+  checkGenerationPolicy,
+  InputPolicyError,
+  type PolicyOutcome,
+} from "../lib/ai/input-policy";
+import { createWebSearch } from "../lib/ai/web-search";
+import type { Retrieval } from "../lib/collections/contracts";
 import { safeSvgSchema } from "../lib/svg/validate-svg";
 import { GENERATION_TIMEOUT_MS } from "../lib/workspace/generation-limits";
 import type {
@@ -16,7 +23,13 @@ type Generate = (
   input: GenerationRequest,
   signal: AbortSignal,
   emit: (event: GenerationEvent) => void,
+  item: EvalCase,
+  retrieval?: Retrieval,
 ) => Promise<{ output: unknown; usage: GenerationUsage }>;
+type Policy = (
+  input: GenerationRequest,
+  signal: AbortSignal,
+) => Promise<PolicyOutcome>;
 const finalSchema = modelOutputSchema.extend({
   message: z.string().trim().min(1).max(2000),
   filename: z.string().regex(/^[a-z0-9][a-z0-9-]{0,59}\.svg$/),
@@ -25,15 +38,38 @@ const finalSchema = modelOutputSchema.extend({
 
 export function createEvalTask(
   model?: LanguageModel,
-  generate: Generate = (input, signal, emit) =>
-    streamSvgGenerationOnServer({
-      svgGenerationRequest: input,
-      signal,
-      onProgress: () => {},
-      model,
-      onEvent: emit,
-    }),
+  generate?: Generate,
+  options: { policy?: Policy } = {},
 ) {
+  const runGeneration: Generate =
+    generate ??
+    ((input, signal, emit, item, retrieval) => {
+      const fixtureResults = item.expected.fixture?.searchResults;
+      const webSearch =
+        fixtureResults || item.category === "injection_tool"
+          ? createWebSearch({
+              apiKey: "controlled-eval-fixture",
+              fetcher: async () =>
+                new Response(
+                  JSON.stringify({ results: fixtureResults ?? [] }),
+                  {
+                    status: 200,
+                  },
+                ),
+            })
+          : undefined;
+      return streamSvgGenerationOnServer({
+        svgGenerationRequest: input,
+        signal,
+        onProgress: () => {},
+        model,
+        onEvent: emit,
+        webSearch,
+        collectionRetrievalContext: retrieval,
+      });
+    });
+  const policy = options.policy ?? checkGenerationPolicy;
+
   return async (item: EvalCase): Promise<EvalOutput> => {
     const start = performance.now();
     const events: GenerationEvent[] = [];
@@ -57,49 +93,101 @@ export function createEvalTask(
         ),
       ).size,
     });
+    const result = (
+      status: EvalOutput["status"],
+      policyStatus: EvalOutput["policy"],
+      source: string | null,
+      error: string | null,
+      usage: GenerationUsage | null,
+    ): EvalOutput => ({
+      status,
+      policy: policyStatus,
+      source,
+      message: null,
+      error,
+      usage,
+      metrics: metrics(),
+      events,
+    });
     let usage: GenerationUsage | null = null;
+    let observedPolicy: EvalOutput["policy"] =
+      item.mode === "policy" ? "unavailable" : "not_applicable";
+    const signal = AbortSignal.timeout(GENERATION_TIMEOUT_MS);
     try {
-      const raw = await generate(
+      if (item.mode === "policy") {
+        let decision: PolicyOutcome;
+        try {
+          decision = await policy(item.input, signal);
+        } catch (error) {
+          if (error instanceof InputPolicyError && error.status === 422)
+            return result("rejected", "rejected", null, null, null);
+          return result(
+            "failed",
+            "unavailable",
+            null,
+            "Policy check failed.",
+            null,
+          );
+        }
+        if (decision.kind === "reply") {
+          const policyStatus =
+            decision.reason === "clarification" ? "clarified" : "conversation";
+          return result(policyStatus, policyStatus, null, null, null);
+        }
+        observedPolicy = "passed";
+      }
+      const fixtureText = item.expected.fixture?.retrievalText;
+      const retrieval: Retrieval | undefined = fixtureText
+        ? {
+            query:
+              item.input.messages.at(-1)?.content ?? "controlled eval fixture",
+            collectionId: "00000000-0000-4000-8000-000000000001",
+            collectionName: "Controlled eval fixture",
+            candidates: [],
+            references: [],
+            conventions: [fixtureText],
+          }
+        : undefined;
+      const raw = await runGeneration(
         item.input,
-        AbortSignal.timeout(GENERATION_TIMEOUT_MS),
+        signal,
         (event) => {
-          // Preview payloads repeat large SVGs; keep timing, but don't store each snapshot.
           if (event.type === "preview")
             firstPreviewMs ??= Math.round(performance.now() - start);
           else if (event.type === "step" || event.type === "tool")
             events.push(event);
         },
+        item,
+        retrieval,
       );
       usage = raw.usage;
-      const result = finalSchema.safeParse(raw.output);
-      if (!result.success)
-        return {
-          status: "failed",
-          source: null,
-          error: "Final output failed application validation.",
+      const parsed = finalSchema.safeParse(raw.output);
+      if (!parsed.success)
+        return result(
+          "failed",
+          observedPolicy,
+          null,
+          "Final output failed application validation.",
           usage,
-          metrics: metrics(),
-          events,
-        };
+        );
       return {
-        status: "completed",
-        source: result.data.svg.source,
-        error: null,
-        usage,
-        metrics: metrics(),
-        events,
+        ...result(
+          "completed",
+          observedPolicy,
+          parsed.data.svg.source,
+          null,
+          usage,
+        ),
+        message: parsed.data.message,
       };
     } catch {
-      // Provider exceptions can contain credentials/request data. Don't persist them.
-      return {
-        status: "failed",
-        source: null,
-        error:
-          "Generation failed or timed out. Inspect the recorded steps and tools.",
+      return result(
+        "failed",
+        observedPolicy,
+        null,
+        "Generation failed or timed out. Inspect the recorded steps and tools.",
         usage,
-        metrics: metrics(),
-        events,
-      };
+      );
     }
   };
 }

@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
-import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { escapeHtml, prepareReview } from "./review-artifacts";
 import { createReviewHandler } from "./review-server";
+import { discoverReviewRuns } from "./review-runs";
 
 async function main() {
   const { values } = parseArgs({
@@ -17,22 +17,27 @@ async function main() {
   if (!Number.isInteger(port) || port < 1024 || port > 65535)
     throw new Error("Choose a port between 1024 and 65535.");
   const root = resolve("evals/runs");
-  const names = values.run
-    ? [values.run]
-    : (await readdir(root, { withFileTypes: true }))
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .sort()
-        .reverse();
-  if (!names.length) throw new Error("No saved runs. Run a live eval first.");
+  const discovered = await discoverReviewRuns(root);
+  const selected = values.run
+    ? discovered.filter(
+        (run) =>
+          run.id === values.run || run.id.startsWith(`${values.run}-trial-`),
+      )
+    : discovered;
+  if (!selected.length)
+    throw new Error(
+      "No saved runs match this selection. Run a live eval first.",
+    );
+  const names = selected.map((run) => run.id);
   const pages = new Map<string, string>();
   const directories = new Map<string, string>();
-  for (const name of names) {
+  for (const run of selected) {
+    const { id: name, directory } = run;
     if (!/^[a-zA-Z0-9_-]+$/.test(name))
       throw new Error("Invalid run directory name.");
-    const review = await prepareReview(resolve(root, name));
+    const review = await prepareReview(directory);
     pages.set(`/${name}`, review.html);
-    directories.set(name, resolve(root, name));
+    directories.set(name, directory);
     console.log(
       `${name}: ${review.count} outputs. Reviews: ${review.reviewPath}`,
     );
