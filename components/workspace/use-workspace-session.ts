@@ -1,8 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react";
 import { useSavedConversation } from "./use-saved-conversation";
 import type { DraftHandle } from "./workspace-draft";
+import {
+  createWorkspaceSessionState,
+  workspaceSessionReducer,
+} from "./workspace-session-state";
 import {
   submissionSchema,
   type Submission,
@@ -12,20 +23,11 @@ import {
   createConversation,
   loadConversation,
 } from "@/lib/conversations/client";
-import { applyEvent, finishDetails } from "@/lib/conversations/state";
 import {
   GenerationRequestError,
   requestSavedSvgGenerationOnClient,
 } from "@/lib/workspace/generate-client";
 import { CLIENT_GENERATION_TIMEOUT_MS } from "@/lib/workspace/generation-limits";
-import type { ChatMessage, SvgDocument } from "@/lib/workspace/types";
-
-const welcome: ChatMessage = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Describe an illustration, icon, or idea to create an SVG. After it’s ready, send a follow-up message to refine it.\n\nThe canvas starts with sample artwork for inspiration.",
-};
 
 export function useWorkspaceSession({
   routeId,
@@ -34,81 +36,75 @@ export function useWorkspaceSession({
   routeId: string | null;
   onCreated: (id: string) => void;
 }) {
-  const [selectedCollection, setCollectionId] = useState("");
-  const [savedConversation, setSavedConversation] = useState<
-    ConversationPage["conversation"] | null
-  >(null);
-  const displayedId = savedConversation?.id ?? null;
-  const collectionId = savedConversation?.collectionId ?? selectedCollection;
-  const privateConversation = savedConversation?.private ?? false;
-  const activeSavedRun = savedConversation?.activeRunId ?? null;
-  const leaseExpiresAt = savedConversation?.leaseExpiresAt ?? null;
-  const [messages, setMessages] = useState<ChatMessage[]>(
-    routeId ? [] : [welcome],
+  const [state, dispatch] = useReducer(
+    workspaceSessionReducer,
+    routeId,
+    createWorkspaceSessionState,
   );
-  const [document, setDocument] = useState<SvgDocument | null>(null);
-  const [publicId, setPublicId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [ready, setReady] = useState(!routeId);
-  const [preview, setPreview] = useState<SvgDocument | null>(null);
-  const [activity, setActivity] = useState("Starting generation…");
-  const [generatedCharacters, setProgress] = useState<number | null>(null);
-  const progress = generatedCharacters ?? 0;
-  const isGenerating = generatedCharacters !== null;
-  const [error, setError] = useState<string | null>(null);
+  const [selectedCollection, setCollectionId] = useState("");
   const draft = useRef<DraftHandle>(null);
-  const setDraft = (value: string) => draft.current?.restore(value);
-  const [olderCursor, setOlderCursor] = useState<number | null>(null);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [historyRefresh, setHistoryRefresh] = useState(0);
-  const [retryInput, setRetryInput] = useState<Submission | null>(null);
-  const [retryAvailableAt, setRetryAvailableAt] = useState(0);
+  // Async guards need the current identity/revision before React renders updates.
   const conversationId = useRef<string | null>(null);
   const revision = useRef(0);
   const activeRequest = useRef<AbortController | null>(null);
   const pendingCreation = useRef<{ id: string; content: string } | null>(null);
 
+  const {
+    savedConversation,
+    messages,
+    document,
+    publicId,
+    isSubmissionInProgress,
+    isConversationStateConfirmed,
+    preview,
+    activity,
+    generatedCharacters,
+    error,
+    olderCursor,
+    isLoadingOlderMessages,
+    historyRefresh,
+    retryInput,
+    retryAvailableAt,
+  } = state;
+  const displayedId = savedConversation?.id ?? null;
+  const collectionId = savedConversation?.collectionId ?? selectedCollection;
+  const isConversationPrivate = savedConversation?.private ?? false;
+  const activeSavedRun = savedConversation?.activeRunId ?? null;
+  const leaseExpiresAt = savedConversation?.leaseExpiresAt ?? null;
+  const progress = generatedCharacters ?? 0;
+  const isSvgGenerationInProgress = generatedCharacters !== null;
+
+  const setSavedConversation = useCallback(
+    (update: SetStateAction<ConversationPage["conversation"] | null>) => {
+      dispatch({ type: "savedConversationUpdated", update });
+    },
+    [],
+  );
+  const setPublicId = useCallback((update: SetStateAction<string | null>) => {
+    dispatch({ type: "publicIdUpdated", update });
+  }, []);
+  const reportWorkspaceError = useCallback((message: string) => {
+    dispatch({ type: "workspaceErrorReported", message });
+  }, []);
+
   const restoreSavedConversationState = useCallback(
-    (page: ConversationPage, merge = false) => {
+    (
+      page: ConversationPage,
+      isMergingSavedMessages = false,
+      unacceptedFailure?: {
+        message: string;
+        submissionKind: Submission["kind"];
+      },
+    ) => {
       conversationId.current = page.conversation.id;
-      setSavedConversation(page.conversation);
       revision.current = page.conversation.revision;
-      setMessages((previous) =>
-        merge
-          ? [
-              ...previous.filter(
-                (message) =>
-                  message.id !== "welcome" &&
-                  message.position &&
-                  !page.messages.some((saved) => saved.id === message.id),
-              ),
-              ...page.messages,
-            ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-          : page.messages,
-      );
-      setDocument(page.document);
-      setPublicId(page.publicId);
-      setPreview(null);
-      if (!merge) setOlderCursor(page.olderCursor);
-      setReady(true);
-      const last = page.messages.at(-1);
-      if (
-        last &&
-        ["error", "interrupted"].includes(last.runStatus) &&
-        last.retryable
-      ) {
-        setRetryInput({
-          kind: "retry",
-          conversationId: page.conversation.id,
-          retryOf: last.id,
-          requestId: crypto.randomUUID(),
-          expectedRevision: page.conversation.revision,
-        });
-        setError(last.runError ?? "Generation was interrupted. Please retry.");
-      } else {
-        setRetryInput(null);
-        setError(null);
-      }
+      dispatch({
+        type: "savedConversationRestored",
+        page,
+        isMergingSavedMessages,
+        retryRequestId: crypto.randomUUID(),
+        unacceptedFailure,
+      });
     },
     [],
   );
@@ -116,58 +112,116 @@ export function useWorkspaceSession({
   const prepareSavedLoad = useCallback(() => {
     activeRequest.current?.abort();
     activeRequest.current = null;
-    setIsLoading(false);
-    setProgress(null);
-    setActivity("Starting generation…");
-    setPreview(null);
-    setReady(false);
-    setError(null);
-    setRetryInput(null);
-    setRetryAvailableAt(0);
+    dispatch({ type: "savedConversationLoadStarted" });
   }, []);
-  const { opening, refresh: refreshSavedConversation } = useSavedConversation({
-    routeId,
-    conversationId,
-    activeSavedRun,
-    leaseExpiresAt,
-    isLoading,
-    onBeforeLoad: prepareSavedLoad,
-    onRestore: restoreSavedConversationState,
-    onError: setError,
-  });
-  useEffect(
-    () => () => {
-      activeRequest.current?.abort();
-      activeRequest.current = null;
-    },
-    [],
-  );
+  const { isOpeningConversation, refresh: refreshSavedConversation } =
+    useSavedConversation({
+      routeId,
+      conversationId,
+      activeSavedRun,
+      leaseExpiresAt,
+      isSubmissionInProgress,
+      onBeforeLoad: prepareSavedLoad,
+      onRestore: restoreSavedConversationState,
+      onError: reportWorkspaceError,
+    });
+
+  function restoreDraft(value: string) {
+    draft.current?.restore(value);
+  }
+
   async function olderMessages() {
-    if (!conversationId.current || !olderCursor || loadingOlder) return;
+    if (!conversationId.current || !olderCursor || isLoadingOlderMessages)
+      return;
     const id = conversationId.current;
-    setLoadingOlder(true);
+    dispatch({ type: "olderMessagesLoadStarted" });
     try {
       const page = await loadConversation(id, undefined, olderCursor);
       if (conversationId.current !== id) return;
-      setMessages((previous) => [
-        ...page.messages.filter(
-          (message) => !previous.some((saved) => saved.id === message.id),
-        ),
-        ...previous.filter((message) => message.id !== "welcome"),
-      ]);
-      setOlderCursor(page.olderCursor);
+      dispatch({ type: "olderMessagesPageReceived", page });
     } catch (error) {
-      setError(
+      reportWorkspaceError(
         error instanceof Error
           ? error.message
           : "Earlier messages could not be loaded.",
       );
     } finally {
-      setLoadingOlder(false);
+      dispatch({ type: "olderMessagesLoadingStopped" });
     }
   }
 
-  async function startAndConsumeSavedSvgGeneration(
+  async function ensureSavedConversation(content: string) {
+    if (conversationId.current) return true;
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    dispatch({ type: "conversationCreationStarted" });
+    pendingCreation.current =
+      pendingCreation.current?.content === content
+        ? pendingCreation.current
+        : { id: crypto.randomUUID(), content };
+    try {
+      const saved = await createConversation(
+        pendingCreation.current.id,
+        content,
+        controller.signal,
+        collectionId || null,
+      );
+      if (activeRequest.current !== controller) return false;
+      conversationId.current = saved.id;
+      revision.current = saved.revision;
+      dispatch({
+        type: "conversationCreated",
+        conversation: {
+          ...saved,
+          collectionId: collectionId || null,
+          private: !!collectionId,
+          activeRunId: null,
+          leaseExpiresAt: null,
+        },
+      });
+      // Adopt the URL without remounting this session or aborting its first run.
+      onCreated(saved.id);
+      window.history.replaceState(null, "", `/conversations/${saved.id}`);
+      return true;
+    } catch (error) {
+      if (activeRequest.current === controller) {
+        restoreDraft(content);
+        reportWorkspaceError(
+          error instanceof Error
+            ? error.message
+            : "Conversation could not be saved.",
+        );
+      }
+      return false;
+    } finally {
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        dispatch({ type: "conversationCreationFinished" });
+      }
+    }
+  }
+
+  async function reconcileSavedConversation(
+    submission: Submission,
+    controller: AbortController,
+    requestFailure: string | null,
+  ) {
+    // The saved result may have committed even if its terminal stream event was lost.
+    const page = await loadConversation(submission.conversationId);
+    if (activeRequest.current !== controller) return;
+    restoreSavedConversationState(
+      page,
+      true,
+      requestFailure
+        ? {
+            message: requestFailure,
+            submissionKind: submission.kind,
+          }
+        : undefined,
+    );
+  }
+
+  async function consumeSavedGeneration(
     submission: Submission,
     optimisticUserMessageId?: string,
   ) {
@@ -175,28 +229,10 @@ export function useWorkspaceSession({
     const controller = new AbortController();
     activeRequest.current = controller;
     let replyId = crypto.randomUUID() as string;
-    let accepted = false;
-    let excluded = false;
+    let isRequestAccepted = false;
+    let isExcludedFromContext = false;
     let requestFailure: string | null = null;
-    setMessages((previous) => [
-      ...previous,
-      {
-        id: replyId,
-        role: "assistant",
-        content: "",
-        flow: [],
-        tools: [],
-        steps: [],
-        runStatus: "running",
-      },
-    ]);
-    setRetryInput(submission);
-    setRetryAvailableAt(0);
-    setIsLoading(true);
-    setProgress(null);
-    setPreview(null);
-    setActivity("Saving your message…");
-    setError(null);
+    dispatch({ type: "generationRequestStarted", submission, replyId });
     const timeout = setTimeout(
       () => controller.abort(),
       CLIENT_GENERATION_TIMEOUT_MS,
@@ -207,167 +243,82 @@ export function useWorkspaceSession({
         signal: controller.signal,
         onGenerationEvent: (event) => {
           if (activeRequest.current !== controller) return;
+          dispatch({
+            type: "generationEventReceived",
+            event,
+            receivedAt: Date.now(),
+            replyId,
+            optimisticUserMessageId,
+          });
           if (event.type === "started") {
-            accepted = true;
+            isRequestAccepted = true;
             revision.current = event.revision;
-            const oldReplyId = replyId;
             replyId = event.assistantMessageId;
-            setMessages((previous) =>
-              previous.map((message) =>
-                message.id === oldReplyId
-                  ? { ...message, id: replyId }
-                  : message.id === optimisticUserMessageId
-                    ? { ...message, id: event.userMessageId }
-                    : message,
-              ),
-            );
-            setActivity("Checking your request…");
-            return;
           }
-          setMessages((previous) =>
-            previous.map((message) =>
-              message.id === replyId ? applyEvent(message, event) : message,
-            ),
-          );
-          if (event.type === "preview")
-            setPreview({
-              name: "draft.svg",
-              description: "SVG in progress",
-              ...event.svg,
-            });
-          if (event.type === "activity")
-            setActivity(
-              `Step ${event.step}/6 · ${event.action === "webSearch" ? "Searching for references…" : event.action === "querySvg" ? "Reading current SVG…" : event.action === "validateSvg" ? "Drawing and checking SVG…" : "Working…"}`,
-            );
-          if (event.type === "progress") {
-            setProgress(event.characters);
-          }
-          if (event.type === "result") {
-            setDocument(event.document);
-            setPublicId(null);
-            setPreview(null);
-            setRetryInput(null);
-          }
-          if (event.type === "reply") setRetryInput(null);
-          if (event.type === "error") {
-            excluded = event.excludedFromContext ?? false;
-            if (event.retryable === false) setRetryInput(null);
-          }
+          if (event.type === "error")
+            isExcludedFromContext = event.excludedFromContext ?? false;
         },
       });
     } catch (error) {
       if (activeRequest.current !== controller) return;
-      const text = controller.signal.aborted
+      const message = controller.signal.aborted
         ? "Generation was interrupted. Reopen the conversation to check its saved state."
         : error instanceof Error
           ? error.message
           : "Generation failed. Please retry.";
-      setError(text);
-      setMessages((previous) =>
-        previous.map((message) =>
-          message.id === replyId
-            ? finishDetails({ ...message, runStatus: "error", runError: text })
-            : message,
-        ),
-      );
-      if (!accepted) {
-        requestFailure = text;
-        setMessages((previous) =>
-          previous.filter(
-            (message) =>
-              message.id !== replyId && message.id !== optimisticUserMessageId,
-          ),
-        );
-        if (submission.kind === "message") setDraft(submission.content);
+      const isConversationConflict =
+        error instanceof GenerationRequestError && error.status === 409;
+      dispatch({
+        type: "generationRequestFailed",
+        message,
+        replyId,
+        optimisticUserMessageId,
+        isRequestAccepted,
+        isConversationConflict,
+        retryAvailableAt:
+          !isConversationConflict && !isExcludedFromContext
+            ? Date.now() + 15_000
+            : null,
+      });
+      if (!isRequestAccepted) {
+        requestFailure = message;
+        if (submission.kind === "message") restoreDraft(submission.content);
       }
-      if (error instanceof GenerationRequestError && error.status === 409) {
-        setRetryInput(null);
-        void refreshSavedConversation();
-      } else if (!excluded) {
-        setRetryAvailableAt(Date.now() + 15_000);
-      }
+      if (isConversationConflict) void refreshSavedConversation();
     } finally {
       clearTimeout(timeout);
       if (activeRequest.current === controller) {
-        // Refresh canonical IDs/details, including success if its last stream event was lost.
         try {
-          const page = await loadConversation(submission.conversationId);
-          if (activeRequest.current === controller) {
-            restoreSavedConversationState(page, true);
-            if (requestFailure) {
-              setError(requestFailure);
-              if (submission.kind === "message") setRetryInput(null);
-            }
-          }
+          await reconcileSavedConversation(
+            submission,
+            controller,
+            requestFailure,
+          );
         } catch {
-          if (activeRequest.current === controller && accepted) {
-            setReady(false);
-            setRetryInput(null);
-            setError(
-              "Unable to confirm saved state. Reopen this conversation before continuing.",
-            );
+          if (activeRequest.current === controller && isRequestAccepted) {
+            dispatch({ type: "savedGenerationConfirmationFailed" });
           }
         }
         if (activeRequest.current === controller) {
           activeRequest.current = null;
-          setIsLoading(false);
-          setProgress(null);
-          setPreview(null);
-          setHistoryRefresh((value) => value + 1);
+          dispatch({ type: "generationRequestFinished" });
         }
       }
     }
   }
+
   async function sendMessage(content: string) {
-    if (activeRequest.current || opening || activeSavedRun || !ready) return;
+    if (
+      activeRequest.current ||
+      isOpeningConversation ||
+      activeSavedRun ||
+      !isConversationStateConfirmed
+    )
+      return;
     const trimmed = content.trim();
     if (!trimmed || trimmed.length > 2000) return;
-    if (!conversationId.current) {
-      const controller = new AbortController();
-      activeRequest.current = controller;
-      setIsLoading(true);
-      setError(null);
-      pendingCreation.current =
-        pendingCreation.current?.content === trimmed
-          ? pendingCreation.current
-          : { id: crypto.randomUUID(), content: trimmed };
-      try {
-        const saved = await createConversation(
-          pendingCreation.current.id,
-          trimmed,
-          controller.signal,
-          collectionId || null,
-        );
-        if (activeRequest.current !== controller) return;
-        conversationId.current = saved.id;
-        revision.current = saved.revision;
-        setSavedConversation({
-          ...saved,
-          collectionId: collectionId || null,
-          private: !!collectionId,
-          activeRunId: null,
-          leaseExpiresAt: null,
-        });
-        onCreated(saved.id);
-        window.history.replaceState(null, "", `/conversations/${saved.id}`);
-        setHistoryRefresh((value) => value + 1);
-      } catch (error) {
-        if (activeRequest.current === controller) {
-          setDraft(trimmed);
-          setError(
-            error instanceof Error
-              ? error.message
-              : "Conversation could not be saved.",
-          );
-        }
-        return;
-      } finally {
-        if (activeRequest.current === controller) {
-          activeRequest.current = null;
-          setIsLoading(false);
-        }
-      }
-    }
+    if (!conversationId.current && !(await ensureSavedConversation(trimmed)))
+      return;
     const parsed = submissionSchema.safeParse({
       kind: "message",
       conversationId: conversationId.current,
@@ -376,48 +327,56 @@ export function useWorkspaceSession({
       expectedRevision: revision.current,
     });
     if (!parsed.success) {
-      setError("Your message could not be submitted.");
-      setDraft(trimmed);
+      reportWorkspaceError("Your message could not be submitted.");
+      restoreDraft(trimmed);
       return;
     }
     const optimisticUserMessageId = crypto.randomUUID();
-    setMessages((previous) => [
-      ...previous.filter((message) => message.id !== "welcome"),
-      { id: optimisticUserMessageId, role: "user", content: trimmed },
-    ]);
-    void startAndConsumeSavedSvgGeneration(
-      parsed.data,
-      optimisticUserMessageId,
-    );
+    dispatch({
+      type: "optimisticUserMessageAdded",
+      id: optimisticUserMessageId,
+      content: trimmed,
+    });
+    void consumeSavedGeneration(parsed.data, optimisticUserMessageId);
   }
+
   function retry() {
     if (!retryInput || Date.now() < retryAvailableAt) return;
-    void startAndConsumeSavedSvgGeneration(
+    void consumeSavedGeneration(
       retryInput.kind === "retry"
         ? { ...retryInput, expectedRevision: revision.current }
         : retryInput,
     );
   }
+
+  useEffect(
+    () => () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    },
+    [],
+  );
+
   return {
     draft,
     collectionId,
     setCollectionId,
-    privateConversation,
+    isConversationPrivate,
     messages,
     document,
     publicId,
-    isLoading,
-    opening,
+    isSubmissionInProgress,
+    isOpeningConversation,
     displayedId,
-    ready,
+    isConversationStateConfirmed,
     activeSavedRun,
-    isGenerating,
+    isSvgGenerationInProgress,
     preview,
     activity,
     progress,
     error,
     olderCursor,
-    loadingOlder,
+    isLoadingOlderMessages,
     historyRefresh,
     retryInput,
     retryAvailableAt,

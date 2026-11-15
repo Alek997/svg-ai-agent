@@ -39,6 +39,7 @@ export function selectContext(
 export function applyEvent(
   message: ChatMessage,
   event: GenerationEvent,
+  receivedAt?: number,
 ): ChatMessage {
   const next = { ...message, flow: recordFlowEvent(message.flow ?? [], event) };
   if (event.type === "step")
@@ -63,7 +64,8 @@ export function applyEvent(
     next.usage = event.usage;
     next.feedbackToken = event.feedbackToken;
     if (event.feedbackToken)
-      next.feedbackExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      next.feedbackExpiresAt =
+        (receivedAt ?? Date.now()) + 7 * 24 * 60 * 60 * 1000;
   }
   if (event.type === "error") {
     next.runStatus = event.interrupted ? "interrupted" : "error";

@@ -19,7 +19,7 @@ export function useSavedConversation({
   conversationId,
   activeSavedRun,
   leaseExpiresAt,
-  isLoading,
+  isSubmissionInProgress,
   onBeforeLoad,
   onRestore,
   onError,
@@ -28,13 +28,14 @@ export function useSavedConversation({
   conversationId: RefObject<string | null>;
   activeSavedRun: string | null;
   leaseExpiresAt: string | null;
-  isLoading: boolean;
+  isSubmissionInProgress: boolean;
   onBeforeLoad: () => void;
   onRestore: (page: ConversationPage) => void;
   onError: (message: string) => void;
 }) {
-  const [opening, setOpening] = useState(!!routeId);
+  const [isOpeningConversation, setIsOpeningConversation] = useState(!!routeId);
   const openRequest = useRef<AbortController | null>(null);
+
   const refresh = useCallback(async () => {
     if (!routeId) return;
     openRequest.current?.abort();
@@ -44,7 +45,7 @@ export function useSavedConversation({
     await Promise.resolve().then(async () => {
       if (controller.signal.aborted) return;
       onBeforeLoad();
-      setOpening(true);
+      setIsOpeningConversation(true);
       try {
         const page = await loadConversation(routeId, controller.signal);
         if (!controller.signal.aborted) onRestore(page);
@@ -63,10 +64,11 @@ export function useSavedConversation({
             : "Conversation could not be opened.",
         );
       } finally {
-        if (!controller.signal.aborted) setOpening(false);
+        if (!controller.signal.aborted) setIsOpeningConversation(false);
       }
     });
   }, [routeId, onBeforeLoad, onRestore, onError]);
+
   useEffect(() => {
     // Adopting a just-created conversation must not abort its first generation.
     if (!routeId || routeId === conversationId.current) return;
@@ -75,7 +77,7 @@ export function useSavedConversation({
   }, [routeId, conversationId, refresh]);
   useEffect(() => () => openRequest.current?.abort(), []);
   useEffect(() => {
-    if (!activeSavedRun || isLoading || !routeId) return;
+    if (!activeSavedRun || isSubmissionInProgress || !routeId) return;
     const timer = setTimeout(
       () => void refresh(),
       Math.min(
@@ -87,6 +89,13 @@ export function useSavedConversation({
       ),
     );
     return () => clearTimeout(timer);
-  }, [activeSavedRun, leaseExpiresAt, isLoading, routeId, refresh]);
-  return { opening, refresh };
+  }, [
+    activeSavedRun,
+    leaseExpiresAt,
+    isSubmissionInProgress,
+    routeId,
+    refresh,
+  ]);
+
+  return { isOpeningConversation, refresh };
 }

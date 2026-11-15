@@ -330,6 +330,48 @@ For standalone workspace and SVG resource lifecycle regressions, run
 [127.0.0.1:4319](http://127.0.0.1:4319). The page runs React Strict Mode checks
 with mocked network responses; it needs no database, authentication, or providers.
 
+Playwright workspace E2E tests exercise the real workspace UI, HTTP streaming,
+saved-generation handler and SVG validation with synthetic providers and an
+in-memory persistence adapter. They do not exercise Clerk, PostgreSQL transactions,
+or Next.js native navigation; those require separate full-app and database
+verification. Fixtures live only
+under `tests/e2e/`, bind to loopback, and never mount production authentication bypasses.
+
+```bash
+npx playwright install chromium
+npm run build -- --webpack
+npm run test:e2e
+PW_SLOW_MO=500 npm run test:e2e:headed
+```
+
+The headed command opens one browser and runs tests sequentially so the flow is
+visible. To use an already installed Google Chrome instead of Playwright Chromium,
+set `PW_CHANNEL=chrome`. Failures save screenshots and traces in `test-results/`;
+`npx playwright show-report` opens the HTML report. The normal suite makes no paid
+provider calls and explicitly excludes the live smoke test.
+
+An optional **paid** smoke test uses the production drawing agent, its tools and
+finalization, server validation and the workspace/download flow. It still uses
+in-memory persistence, synthetic policy approval for one fixed safe prompt, and
+no search, collections, tracking or visual judge. Run the no-network preflight
+first (it loads server settings from ignored `.env.local` and prints only the model,
+credential presence, prompt and limits):
+
+```bash
+npm run test:e2e:live:preflight
+```
+
+Only after reviewing and approving the paid run, set
+`E2E_LIVE_APPROVAL=I_ACCEPT_PAID_OPENAI_REQUESTS` and
+`E2E_LIVE_APPROVED_MODEL` to exactly the preflight model, then run
+`npm run test:e2e:live`. This separate command runs headed, allows one browser
+submission and at most three OpenAI requests, caps each output at 2,048 tokens and
+each serialized request body at 32,000 UTF-8 bytes, and stops within 90 seconds.
+Provider failures cannot trigger outbound retries; Playwright retries and repeat
+runs are disabled. Exhausting a limit fails the smoke instead of extending its
+budget. These bounds are not a dollar-price guarantee. No credentials enter the
+browser bundle or test output.
+
 Validate the eval dataset without model calls:
 
 ```bash

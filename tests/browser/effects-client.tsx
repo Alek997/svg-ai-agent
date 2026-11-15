@@ -8,6 +8,7 @@ import { sampleDocument } from "../../lib/workspace/sample";
 import "./navigation";
 import { renderCounts } from "./render-counts";
 import { runStateOwnershipChecks } from "./state-ownership";
+import { runWorkspaceSessionChecks } from "./workspace-session";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const fixture = document.getElementById("fixture")!;
@@ -290,6 +291,7 @@ async function run() {
   await render(<></>);
   check(liveUrls.size === 0, "Workspace teardown releases all SVG resources");
   await runStateOwnershipChecks({ fixture, render, click, check });
+  await runWorkspaceSessionChecks({ render, check });
   check(
     liveUrls.size === 0,
     "All state ownership checks release their SVG URLs",

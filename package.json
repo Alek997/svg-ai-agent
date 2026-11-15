@@ -19,7 +19,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test:db": "node --conditions=react-server --import tsx --test tests/integration/*.test.ts",
-    "test:browser:fixture": "node --conditions=react-server --import tsx tests/browser/server.mts"
+    "test:browser:fixture": "node --conditions=react-server --import tsx tests/browser/server.mts",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:fixture": "node --conditions=react-server --import tsx tests/e2e/fixture/server.mts",
+    "test:e2e:live:preflight": "node --env-file-if-exists=.env.local --import tsx tests/e2e/live/preflight.ts",
+    "test:e2e:live": "node --env-file-if-exists=.env.local node_modules/@playwright/test/cli.js test --config=playwright.live.config.ts --headed"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.85",
@@ -38,6 +43,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.23.1",

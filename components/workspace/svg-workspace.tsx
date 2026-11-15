@@ -26,9 +26,11 @@ export function SvgWorkspace(props: WorkspaceProps) {
     ? pathname.split("/")[2]
     : null;
   const [session, setSession] = useState({ routeId, key: 0 });
+
   if (session.routeId !== routeId) {
     setSession({ routeId, key: session.key + 1 });
   }
+
   return (
     <WorkspaceSession
       {...props}
@@ -46,8 +48,8 @@ export function SvgWorkspace(props: WorkspaceProps) {
 }
 
 function WorkspaceSession({
-  trackingEnabled = false,
-  ragEnabled = false,
+  trackingEnabled: isTrackingEnabled = false,
+  ragEnabled: isCollectionFeatureEnabled = false,
   routeId,
   onCreated,
   onNewSession,
@@ -56,28 +58,27 @@ function WorkspaceSession({
   onCreated: (id: string) => void;
   onNewSession: () => void;
 }) {
-  const pathname = routeId ? `/conversations/${routeId}` : "/";
   const navigation = useRef<NavigationHandle>(null);
   const {
     draft,
     collectionId,
     setCollectionId,
-    privateConversation,
+    isConversationPrivate,
     messages,
     document,
     publicId,
-    isLoading,
-    opening,
+    isSubmissionInProgress,
+    isOpeningConversation,
     displayedId,
-    ready,
+    isConversationStateConfirmed,
     activeSavedRun,
-    isGenerating,
+    isSvgGenerationInProgress,
     preview,
     activity,
     progress,
     error,
     olderCursor,
-    loadingOlder,
+    isLoadingOlderMessages,
     historyRefresh,
     retryInput,
     retryAvailableAt,
@@ -89,33 +90,36 @@ function WorkspaceSession({
     setPublicId,
     abort,
   } = useWorkspaceSession({ routeId, onCreated });
+  const pathname = routeId ? `/conversations/${routeId}` : "/";
+  const isWorkspaceSkeletonVisible =
+    isOpeningConversation || !!(routeId && routeId !== displayedId && !error);
+
   function navigate(path: string) {
     navigation.current?.navigate(path);
   }
-  const showSkeleton =
-    opening || !!(routeId && routeId !== displayedId && !error);
+
   return (
     <WorkspaceDraft ref={draft}>
       <WorkspaceNavigation
         ref={navigation}
-        isLoading={isLoading}
+        isLoading={isSubmissionInProgress}
         pathname={pathname}
         onNewSession={onNewSession}
         onRefresh={() => void refreshSavedConversation()}
         onAbort={abort}
       />
-      {showSkeleton ? (
+      {isWorkspaceSkeletonVisible ? (
         <WorkspaceSkeleton />
       ) : (
         <>
-          {ragEnabled && (
+          {isCollectionFeatureEnabled && (
             <WorkspaceCollections
               conversationId={displayedId}
               hasArtwork={!!document}
-              privateConversation={privateConversation}
+              privateConversation={isConversationPrivate}
               selected={collectionId}
               onSelect={setCollectionId}
-              disabled={isLoading || !!activeSavedRun}
+              disabled={isSubmissionInProgress || !!activeSavedRun}
               onAdded={() => {
                 setSavedConversation((previous) =>
                   previous ? { ...previous, private: true } : previous,
@@ -127,33 +131,43 @@ function WorkspaceSession({
           )}
           <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_400px]">
             {routeId && !document && !preview ? (
-              <EmptySavedCanvas isLoading={isLoading} activity={activity} />
+              <EmptySavedCanvas
+                isLoading={isSubmissionInProgress}
+                activity={activity}
+              />
             ) : (
               <SvgCanvas
                 document={preview ?? document ?? sampleDocument}
                 publicId={
-                  !isLoading && !activeSavedRun && !preview ? publicId : null
+                  !isSubmissionInProgress && !activeSavedRun && !preview
+                    ? publicId
+                    : null
                 }
                 hasPreview={!!preview}
                 activity={activity}
                 isSample={!document}
-                isLoading={isGenerating}
+                isLoading={isSvgGenerationInProgress}
               />
             )}
             <ChatPanel
               messages={messages}
               onSend={(content) => void sendMessage(content)}
               onReset={() => navigate("/")}
-              isLoading={isLoading || opening || !!activeSavedRun || !ready}
+              isLoading={
+                isSubmissionInProgress ||
+                isOpeningConversation ||
+                !!activeSavedRun ||
+                !isConversationStateConfirmed
+              }
               progress={progress}
               activity={
-                opening
+                isOpeningConversation
                   ? "Opening saved conversation…"
-                  : activeSavedRun && !isLoading
+                  : activeSavedRun && !isSubmissionInProgress
                     ? "An earlier generation is still active. Refresh its status or wait for recovery."
                     : activity
               }
-              trackingEnabled={trackingEnabled && !privateConversation}
+              trackingEnabled={isTrackingEnabled && !isConversationPrivate}
               error={error}
               retryAvailableAt={retryAvailableAt}
               onRetry={error && retryInput ? retry : undefined}
@@ -161,10 +175,10 @@ function WorkspaceSession({
               historyRefresh={historyRefresh}
               onOpenConversation={(id) => navigate(`/conversations/${id}`)}
               olderCursor={olderCursor}
-              loadingOlder={loadingOlder}
+              loadingOlder={isLoadingOlderMessages}
               onLoadOlder={() => void olderMessages()}
               onRefreshConversation={
-                routeId && !isLoading
+                routeId && !isSubmissionInProgress
                   ? () => void refreshSavedConversation()
                   : undefined
               }

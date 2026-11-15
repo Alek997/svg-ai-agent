@@ -4,6 +4,24 @@ SVG Studio creates and edits SVG artwork through conversation. Evaluations measu
 
 ## Language
 
+### Workspace
+
+**Conversation**
+
+A saved exchange of user messages and assistant responses, together with its completed artwork and generation attempts.
+
+**Workspace session**
+
+The current workspace interaction, including an unsent draft and any ongoing generation. A session can begin without a saved conversation and continue after creating one.
+
+**Preview**
+
+A provisional, validated SVG snapshot from an ongoing generation. It is separate from completed artwork and is not a completed download.
+
+**Completed artwork**
+
+A final SVG result that has passed server validation and been saved successfully.
+
 ### Evaluation
 
 **Eval run**

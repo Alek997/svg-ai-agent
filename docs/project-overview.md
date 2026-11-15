@@ -125,6 +125,12 @@ The browser never receives provider credentials and does not run the model.
 The model proposes artwork and tool calls; the server executes tools and decides
 whether a result satisfies the application's contracts.
 
+In the workspace client, `useWorkspaceSession` coordinates submission, cancellation
+and saved-state recovery. `workspace-session-state.ts` groups related UI state
+changes in a reducer; request effects stay in the hook, and display flags derived
+from that state are calculated when rendering. `useSavedConversation` owns saved
+conversation loading and lease-expiry refreshes.
+
 ### A message from submission to saved result
 
 1. **Submit.** The browser sends a message, request identity and expected
