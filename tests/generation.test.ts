@@ -35,7 +35,7 @@ const artwork = {
 };
 
 const usage = {
-  model: "gpt-6-luna",
+  model: "mock-drawing-model",
   inputTokens: 100,
   outputTokens: 100,
   cachedInputTokens: 0,

@@ -30,7 +30,9 @@ const checks: PolicyChecks = {
 function mockEnvironment(context: TestContext) {
   for (const [name, value] of Object.entries({
     OPENAI_API_KEY: "mock-key",
-    OPENAI_MODEL: "gpt-6-luna",
+    OPENAI_MODEL: "mock-drawing-model",
+    OPENAI_SCOPE_MODEL: "mock-scope-model",
+    OPENAI_MODERATION_MODEL: "mock-moderation-model",
   })) {
     const previous = process.env[name];
     process.env[name] = value;
@@ -428,7 +430,7 @@ for (const language of ["en", "sr_latn", "sr_cyrl", "other"] as const) {
         calls++;
         assert.equal(String(url), "https://api.openai.com/v1/decisions");
         const body = JSON.parse(String(init?.body));
-        assert.equal(body.model, "gpt-6-luna");
+        assert.equal(body.model, "mock-drawing-model");
         assert.match(JSON.stringify(body.input), /latestRequest/);
         assert.deepEqual(
           body.questions.map((q: { name: string }) => q.name),
@@ -458,7 +460,7 @@ for (const language of ["en", "sr_latn", "sr_cyrl", "other"] as const) {
         assert.match(body.questions[2].instructions, /cao, kako je/);
         assert.match(body.questions[2].instructions, /recent USER messages/);
         return Response.json({
-          model: "gpt-6-luna",
+          model: "mock-drawing-model",
           answers: body.questions.map(
             (q: { name: string; choices: { value: string }[] }) => ({
               name: q.name,
@@ -482,7 +484,7 @@ for (const language of ["en", "sr_latn", "sr_cyrl", "other"] as const) {
       await checkSvgScope(
         input,
         signal(),
-        provider.decisionModel("gpt-6-luna"),
+        provider.decisionModel("mock-drawing-model"),
       ),
       { ...allowed, language: { choice: language } },
     );
@@ -490,11 +492,43 @@ for (const language of ["en", "sr_latn", "sr_cyrl", "other"] as const) {
   });
 }
 
+test("scope policy resolves its independent environment model through the default provider", async (context) => {
+  mockEnvironment(context);
+  context.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: unknown, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.model, "mock-scope-model");
+      return Response.json({
+        model: body.model,
+        answers: body.questions.map(
+          (question: { name: string; choices: { value: string }[] }) => ({
+            name: question.name,
+            type: "choice",
+            choice: question.name === "language" ? "en" : "allow",
+            confidence: 0.95,
+            probabilities: question.choices.map(({ value }) => ({
+              value,
+              probability:
+                value === (question.name === "language" ? "en" : "allow")
+                  ? 0.95
+                  : 0.05 / (question.choices.length - 1),
+            })),
+          }),
+        ),
+        usage: { input_tokens: 20, output_tokens: 0, total_tokens: 20 },
+      });
+    },
+  );
+  assert.deepEqual(await checkSvgScope(input, signal()), allowed);
+});
+
 test("native Decisions refusal and transient errors are not treated as approval or retried", async () => {
   for (const response of [
     () =>
       Response.json({
-        model: "gpt-6-luna",
+        model: "mock-drawing-model",
         answers: [{ name: "scope", type: "refusal" }],
         usage: { input_tokens: 20, output_tokens: 0, total_tokens: 20 },
       }),
@@ -514,7 +548,11 @@ test("native Decisions refusal and transient errors are not treated as approval 
         checkGenerationPolicy(input, signal(), {
           ...checks,
           classify: (request, abort) =>
-            checkSvgScope(request, abort, provider.decisionModel("gpt-6-luna")),
+            checkSvgScope(
+              request,
+              abort,
+              provider.decisionModel("mock-drawing-model"),
+            ),
         }),
       (error) => error instanceof InputPolicyError && error.status === 503,
     );
@@ -540,7 +578,7 @@ test("moderation checks all submitted user history once, excluding assistant cla
       calls++;
       assert.equal(url, "https://api.openai.com/v1/moderations");
       assert.deepEqual(JSON.parse(String(init?.body)), {
-        model: "omni-moderation-latest",
+        model: "mock-moderation-model",
         input: "old user input\n\nnew user input",
       });
       assert.equal(init?.signal?.aborted, false);

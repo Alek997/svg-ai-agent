@@ -6,7 +6,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import type { GenerationRequest } from "../workspace/contracts";
-import { modelDefaults, policyConfig } from "./config";
+import { getConfiguredModel, policyConfig } from "./config";
 import { getOpenAIKey, getOpenAIProvider } from "./model";
 import {
   getConversationReply,
@@ -15,7 +15,6 @@ import {
 } from "./conversation-replies";
 
 const POLICY_TIMEOUT_MS: number = policyConfig.timeoutMs;
-const SCOPE_MODEL = modelDefaults.scope;
 
 export class InputPolicyError extends Error {
   constructor(
@@ -71,7 +70,7 @@ export async function checkSvgScope(
   input: GenerationRequest,
   signal: AbortSignal,
   model: Experimental_DecisionModel = getOpenAIProvider().decisionModel(
-    SCOPE_MODEL,
+    getConfiguredModel("scope"),
   ),
 ) {
   const result = await decide({
@@ -194,7 +193,10 @@ export async function moderateUserHistory(
       Authorization: `Bearer ${getOpenAIKey()}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model: modelDefaults.moderation, input: text }),
+    body: JSON.stringify({
+      model: getConfiguredModel("moderation"),
+      input: text,
+    }),
   });
   if (!response.ok) throw new Error("Moderation unavailable");
   // Bound provider response memory and reject malformed/partial moderation results.

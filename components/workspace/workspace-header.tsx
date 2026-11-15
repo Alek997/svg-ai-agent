@@ -3,7 +3,7 @@ import { ragEnabled } from "@/lib/collections/access";
 import { canReviewEvals } from "@/lib/eval-review/access";
 import { Icon } from "@/components/ui/icon";
 import { UserButton } from "@clerk/nextjs";
-import { getConfiguredModelName } from "@/lib/ai/model";
+import { getConfiguredModelLabel } from "@/lib/ai/config";
 
 export async function WorkspaceHeader() {
   const { userId } = await auth();
@@ -24,9 +24,8 @@ export async function WorkspaceHeader() {
             </span>
           </h1>
           <p className="mt-0.5 text-xs text-stone-500">
-            Model:{" "}
             <span className="font-medium text-stone-600">
-              {getConfiguredModelName()}
+              {getConfiguredModelLabel()}
             </span>
           </p>
         </div>

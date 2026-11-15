@@ -5,9 +5,9 @@ import { MockLanguageModelV4 } from "ai/test";
 import { streamSvgGenerationOnServer } from "../lib/ai/generate-svg";
 import { buildSvgAgentMessages, createSvgAgent } from "../lib/ai/svg-agent";
 import { createWebSearch } from "../lib/ai/web-search";
-import { getConfiguredModelName, getLLM } from "../lib/ai/model";
+import { getLLM } from "../lib/ai/model";
 
-test("drawing model and displayed model default to Luna and respect server overrides", (context) => {
+test("drawing requires an explicit environment model and respects runtime overrides", (context) => {
   const previousKey = process.env.OPENAI_API_KEY;
   const previousModel = process.env.OPENAI_MODEL;
   context.after(() => {
@@ -18,11 +18,13 @@ test("drawing model and displayed model default to Luna and respect server overr
   });
   process.env.OPENAI_API_KEY = "mock-key";
   delete process.env.OPENAI_MODEL;
-  assert.equal(getConfiguredModelName(), "gpt-6-luna");
-  assert.equal(getLLM().modelId, "gpt-6-luna");
+  assert.throws(() => getLLM(), /Configure/);
   process.env.OPENAI_MODEL = "configured-model";
-  assert.equal(getConfiguredModelName(), "configured-model");
   assert.equal(getLLM().modelId, "configured-model");
+  process.env.OPENAI_MODEL = "  changed-model  ";
+  assert.equal(getLLM().modelId, "changed-model");
+  process.env.OPENAI_MODEL = "  ";
+  assert.throws(() => getLLM(), /Configure/);
 });
 
 const output = {

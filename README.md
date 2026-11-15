@@ -5,6 +5,9 @@ Describe an icon, logo, illustration or diagram, watch validated drafts appear
 in the canvas, and refine the result with follow-up messages. Completed artwork
 is saved with its conversation and can be inspected, copied and downloaded.
 
+For a compact code walkthrough and current gaps, see the
+[project overview](docs/project-overview.md).
+
 ## Features
 
 - Progressive SVG previews, source view, zoom, copy and download.
@@ -67,34 +70,39 @@ settings. Only model values are preset; fill in credentials and project settings
 locally. Set the Clerk route variables to `/sign-in` and `/sign-up` in `.env.local`.
 Restart the development server after changing settings.
 
-| Variable                            | Purpose / default                                                                                  |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`                    | Server credential for generation, moderation, policy checks, collection indexing and evals.        |
-| `OPENAI_MODEL`                      | SVG generation model; defaults to `gpt-6-luna`.                                                    |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk's browser-safe publishable key.                                                              |
-| `CLERK_SECRET_KEY`                  | Server credential for Clerk sessions and capability checks.                                        |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`     | Sign-in route; set to `/sign-in` locally.                                                          |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL`     | Sign-up route; set to `/sign-up` locally.                                                          |
-| `DATABASE_URL`                      | Server-only Neon PostgreSQL connection string.                                                     |
-| `TAVILY_API_KEY`                    | Optional server credential for reference search.                                                   |
-| `COLLECTION_DESCRIPTION_MODEL`      | Collection image-description model; defaults to `gpt-6-luna`.                                      |
-| `COLLECTION_EMBEDDING_MODEL`        | Collection embedding model; defaults to `text-embedding-3-small`, with 1,536 requested dimensions. |
-| `BRAINTRUST_TRACKING_ENABLED`       | App generation logging; disabled unless set to `true` with a Braintrust key.                       |
-| `BRAINTRUST_API_KEY`                | Server credential for optional app logs or explicitly enabled eval uploads.                        |
-| `BRAINTRUST_PROJECT`                | Braintrust project name; configure your own value locally.                                         |
-| `BRAINTRUST_FEEDBACK_SECRET`        | Signing secret of at least 32 characters for feedback permissions.                                 |
-| `EVAL_JUDGE_MODEL`                  | Eval judge selected with `--judge`; defaults to `gpt-6-luna`.                                      |
+| Variable                            | Purpose / default                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| `OPENAI_API_KEY`                    | Server credential for generation, moderation, policy checks, collection indexing and evals. |
+| `OPENAI_MODEL_LABEL`                | Public header label; defaults to “SVG assistant”, never the provider ID.                    |
+| `OPENAI_SCOPE_MODEL`                | Required Decisions model for input policy.                                                  |
+| `OPENAI_MODERATION_MODEL`           | Required moderation model for input policy.                                                 |
+| `OPENAI_MODEL`                      | Required SVG generation model.                                                              |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk's browser-safe publishable key.                                                       |
+| `CLERK_SECRET_KEY`                  | Server credential for Clerk sessions and capability checks.                                 |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL`     | Sign-in route; set to `/sign-in` locally.                                                   |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL`     | Sign-up route; set to `/sign-up` locally.                                                   |
+| `DATABASE_URL`                      | Server-only Neon PostgreSQL connection string.                                              |
+| `TAVILY_API_KEY`                    | Optional server credential for reference search.                                            |
+| `COLLECTION_DESCRIPTION_MODEL`      | Required collection image-description model when indexing.                                  |
+| `COLLECTION_EMBEDDING_MODEL`        | Required collection embedding model; must support 1,536 dimensions.                         |
+| `BRAINTRUST_TRACKING_ENABLED`       | App generation logging; disabled unless set to `true` with a Braintrust key.                |
+| `BRAINTRUST_API_KEY`                | Server credential for optional app logs or explicitly enabled eval uploads.                 |
+| `BRAINTRUST_PROJECT`                | Braintrust project name; configure your own value locally.                                  |
+| `BRAINTRUST_FEEDBACK_SECRET`        | Signing secret of at least 32 characters for feedback permissions.                          |
+| `EVAL_JUDGE_MODEL`                  | Required eval judge model when using `--judge`.                                             |
 
-Provider model defaults and policy/collection provider settings are defined in
-`lib/ai/config.ts`; generation deadlines, token limits and retries are in
-`lib/workspace/generation-limits.ts`.
+Model roles are resolved from environment variables in `lib/ai/config.ts` with
+no code defaults. Copy model settings from `.env.example` into `.env.local` or
+your deployment environment. Missing or blank model settings fail when the
+corresponding role is used; builds do not require model configuration.
 
-`OPENAI_MODEL` changes the drawing model only. Input policy separately uses
-`omni-moderation-latest` and the `gpt-6-luna` Decisions model configured in
-`lib/ai/config.ts`. Collection description/embedding and evaluation judge
-models have their own settings. Check provider access and model output limits
-before changing models; the drawing cap is configured in
-`lib/workspace/generation-limits.ts`.
+`OPENAI_MODEL` changes drawing only. Policy, collection and judge models have
+independent environment settings. `OPENAI_MODEL_LABEL` controls the public
+header text without exposing the provider ID. Internal tracking and eval artifacts
+retain configured IDs for reproducibility. Collection embeddings must remain
+compatible with the database's 1,536 dimensions; changing embedding models
+requires explicit reindexing. Generation deadlines, token limits and retries
+remain in `lib/workspace/generation-limits.ts`.
 
 Keep real credentials in ignored `.env.local` or deployment environment settings.
 Only Clerk's publishable key and public route settings use `NEXT_PUBLIC_`.

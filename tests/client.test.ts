@@ -24,7 +24,7 @@ test("saved conversation loads preserve denied/missing and temporary failure sta
 const result: GenerationEvent = {
   type: "result",
   usage: {
-    model: "gpt-6-luna",
+    model: "mock-drawing-model",
     inputTokens: 100,
     outputTokens: 100,
     cachedInputTokens: 0,

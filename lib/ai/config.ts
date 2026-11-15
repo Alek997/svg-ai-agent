@@ -1,15 +1,32 @@
 import "server-only";
 
-// Change provider defaults here. Existing environment overrides are resolved at
-// request time by their callers. Each role stays independent of the drawing model.
-export const modelDefaults = {
-  drawing: "gpt-6-luna",
-  scope: "gpt-6-luna",
-  moderation: "omni-moderation-latest",
-  collectionDescription: "gpt-6-luna",
-  collectionEmbedding: "text-embedding-3-small",
-  evalJudge: "gpt-6-luna",
+import { z } from "zod";
+import { ModelConfigurationError } from "./errors";
+
+// Resolve lazily: builds need no provider configuration, and roles remain independent.
+export const modelEnvironmentVariables = {
+  drawing: "OPENAI_MODEL",
+  scope: "OPENAI_SCOPE_MODEL",
+  moderation: "OPENAI_MODERATION_MODEL",
+  collectionDescription: "COLLECTION_DESCRIPTION_MODEL",
+  collectionEmbedding: "COLLECTION_EMBEDDING_MODEL",
+  evalJudge: "EVAL_JUDGE_MODEL",
 } as const;
+
+const modelNameSchema = z.string().trim().min(1);
+
+export function getConfiguredModel(
+  role: keyof typeof modelEnvironmentVariables,
+) {
+  const variable = modelEnvironmentVariables[role];
+  const result = modelNameSchema.safeParse(process.env[variable]);
+  if (!result.success) throw new ModelConfigurationError(variable);
+  return result.data;
+}
+
+export function getConfiguredModelLabel() {
+  return process.env.OPENAI_MODEL_LABEL?.trim() || "SVG assistant";
+}
 
 export const policyConfig = {
   timeoutMs: 15_000,

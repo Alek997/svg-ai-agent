@@ -29,6 +29,10 @@ import { resolvePublicId } from "../../lib/svg/public-result";
 import { publicIdSchema } from "../../lib/svg/public-id";
 
 // This suite intentionally requires a disposable database; it truncates its tables.
+// Keep model configuration consistent with the injected synthetic providers.
+process.env.COLLECTION_DESCRIPTION_MODEL = "mock-description-model";
+process.env.COLLECTION_EMBEDDING_MODEL = "mock-embedding-model";
+
 const connectionString = process.env.TEST_DATABASE_URL;
 if (
   !connectionString ||
@@ -486,7 +490,7 @@ const providers: CollectionProviders = {
   embed: async (values) => ({
     embeddings: values.map(() => vector),
     usage: {
-      model: "text-embedding-3-small",
+      model: "mock-embedding-model",
       tokens: values.length * 5,
       dimensions: 1536,
     },

@@ -25,6 +25,10 @@ import type { CollectionProviders } from "../../lib/collections/providers";
 import type { ServerSvgGenerator } from "../../lib/ai/handle-generation";
 import type { Retrieval } from "../../lib/collections/contracts";
 
+// Keep model configuration consistent with the injected synthetic providers.
+process.env.COLLECTION_DESCRIPTION_MODEL = "mock-description-model";
+process.env.COLLECTION_EMBEDDING_MODEL = "mock-embedding-model";
+
 const connectionString = process.env.TEST_DATABASE_URL;
 if (
   !connectionString ||
@@ -69,7 +73,7 @@ const providers: CollectionProviders = {
     return {
       embeddings: values.map(() => [1, ...Array(1535).fill(0)]),
       usage: {
-        model: "text-embedding-3-small",
+        model: "mock-embedding-model",
         tokens: values.length * 5,
         dimensions: 1536,
       },

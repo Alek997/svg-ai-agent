@@ -2,33 +2,16 @@ import "server-only";
 
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
-import { modelDefaults } from "./config";
+import { getConfiguredModel } from "./config";
 import { ModelConfigurationError } from "./errors";
 
-const DEFAULT_OPENAI_MODEL = modelDefaults.drawing;
-
-const environmentSchema = z.object({
-  OPENAI_API_KEY: z.string().trim().min(1),
-  OPENAI_MODEL: z.string().trim().min(1).default(DEFAULT_OPENAI_MODEL),
-});
-
-function getEnvironment() {
-  // Validate when generation is requested, so builds do not require a live key.
-  const result = environmentSchema.safeParse({
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    OPENAI_MODEL: process.env.OPENAI_MODEL,
-  });
-
-  if (!result.success) {
-    // Do not include environment values in errors or logs.
-    throw new ModelConfigurationError();
-  }
-
-  return result.data;
-}
+const apiKeySchema = z.string().trim().min(1);
 
 export function getOpenAIKey() {
-  return getEnvironment().OPENAI_API_KEY;
+  // Validate only when needed; never include environment values in errors.
+  const result = apiKeySchema.safeParse(process.env.OPENAI_API_KEY);
+  if (!result.success) throw new ModelConfigurationError();
+  return result.data;
 }
 
 export function getOpenAIProvider() {
@@ -36,16 +19,5 @@ export function getOpenAIProvider() {
 }
 
 export function getLLM() {
-  const environment = getEnvironment();
-  return createOpenAI({ apiKey: environment.OPENAI_API_KEY }).responses(
-    environment.OPENAI_MODEL,
-  );
-}
-
-// The header needs only the public model name, never API credentials.
-export function getConfiguredModelName() {
-  const result = environmentSchema.shape.OPENAI_MODEL.safeParse(
-    process.env.OPENAI_MODEL,
-  );
-  return result.success ? result.data : "Unavailable";
+  return getOpenAIProvider().responses(getConfiguredModel("drawing"));
 }

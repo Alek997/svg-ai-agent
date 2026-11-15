@@ -12,7 +12,7 @@ import {
   type EvalResultWithSummary,
   type EvalScorer,
 } from "braintrust";
-import { modelDefaults } from "../lib/ai/config";
+import { getConfiguredModel } from "../lib/ai/config";
 import { getLLM } from "../lib/ai/model";
 import { evalConfig } from "./config";
 import {
@@ -100,14 +100,13 @@ async function main() {
   // Register tracing only in this CLI process, never in browser or app requests.
   if (values.braintrust) registerTelemetry(braintrustAISDKTelemetry());
   const model = getLLM();
-  const judgeModel =
-    process.env.EVAL_JUDGE_MODEL?.trim() || modelDefaults.evalJudge;
+  const judgeModel = values.judge ? getConfiguredModel("evalJudge") : null;
   const scorers = [...basicScorers];
   if (values.judge)
     scorers.push(
       createVisionScorer(
         createOpenAI({ apiKey: process.env.OPENAI_API_KEY }).responses(
-          judgeModel,
+          judgeModel!,
         ),
       ),
     );
@@ -120,8 +119,8 @@ async function main() {
     braintrustUpload: values.braintrust,
     generatorModel: typeof model === "string" ? model : model.modelId,
     policyModels: {
-      scope: modelDefaults.scope,
-      moderation: modelDefaults.moderation,
+      scope: getConfiguredModel("scope"),
+      moderation: getConfiguredModel("moderation"),
     },
     judgeModel: values.judge ? judgeModel : null,
     datasetHash: hash(datasetText),

@@ -1,18 +1,14 @@
 import "server-only";
 import { openai } from "@ai-sdk/openai";
 import { generateText, Output, embedMany } from "ai";
-import { modelDefaults, collectionProviderConfig } from "../ai/config";
+import { getConfiguredModel, collectionProviderConfig } from "../ai/config";
 import { descriptionSchema } from "./contracts";
 import { summarizeUsage } from "../ai/usage";
 
 export function collectionModels() {
   return {
-    description:
-      process.env.COLLECTION_DESCRIPTION_MODEL?.trim() ||
-      modelDefaults.collectionDescription,
-    embedding:
-      process.env.COLLECTION_EMBEDDING_MODEL?.trim() ||
-      modelDefaults.collectionEmbedding,
+    description: getConfiguredModel("collectionDescription"),
+    embedding: getConfiguredModel("collectionEmbedding"),
     dimensions: collectionProviderConfig.embeddingDimensions,
     version: collectionProviderConfig.descriptionVersion,
   };
