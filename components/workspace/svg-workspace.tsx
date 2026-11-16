@@ -59,6 +59,9 @@ function WorkspaceSession({
   onNewSession: () => void;
 }) {
   const navigation = useRef<NavigationHandle>(null);
+  const [mobileView, setMobileView] = useState<"conversation" | "canvas">(
+    "conversation",
+  );
   const {
     draft,
     collectionId,
@@ -129,60 +132,85 @@ function WorkspaceSession({
               }}
             />
           )}
-          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_400px]">
-            {routeId && !document && !preview ? (
-              <EmptySavedCanvas
-                isLoading={isSubmissionInProgress}
-                activity={activity}
-              />
-            ) : (
-              <SvgCanvas
-                document={preview ?? document ?? sampleDocument}
-                publicId={
-                  !isSubmissionInProgress && !activeSavedRun && !preview
-                    ? publicId
-                    : null
+          <nav
+            aria-label="Workspace view"
+            className="flex shrink-0 gap-2 border-b border-stone-200 bg-white px-3 py-2 lg:hidden"
+          >
+            {(["conversation", "canvas"] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                aria-pressed={mobileView === view}
+                onClick={() => setMobileView(view)}
+                className={`min-h-10 flex-1 rounded-lg px-3 text-sm font-medium capitalize ${mobileView === view ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600"}`}
+              >
+                {view === "conversation" ? "Conversation" : "Canvas"}
+              </button>
+            ))}
+          </nav>
+          <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px]">
+            <div
+              className={`${mobileView === "canvas" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-hidden lg:flex [&>section]:flex-1`}
+            >
+              {routeId && !document && !preview ? (
+                <EmptySavedCanvas
+                  isLoading={isSubmissionInProgress}
+                  activity={activity}
+                />
+              ) : (
+                <SvgCanvas
+                  document={preview ?? document ?? sampleDocument}
+                  publicId={
+                    !isSubmissionInProgress && !activeSavedRun && !preview
+                      ? publicId
+                      : null
+                  }
+                  hasPreview={!!preview}
+                  activity={activity}
+                  isSample={!document}
+                  isLoading={isSvgGenerationInProgress}
+                />
+              )}
+            </div>
+            <div
+              className={`${mobileView === "conversation" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-hidden lg:flex [&>aside]:flex-1`}
+            >
+              <ChatPanel
+                isMobileViewActive={mobileView === "conversation"}
+                messages={messages}
+                onSend={(content) => void sendMessage(content)}
+                onReset={() => navigate("/")}
+                isLoading={
+                  isSubmissionInProgress ||
+                  isOpeningConversation ||
+                  !!activeSavedRun ||
+                  !isConversationStateConfirmed
                 }
-                hasPreview={!!preview}
-                activity={activity}
-                isSample={!document}
-                isLoading={isSvgGenerationInProgress}
+                progress={progress}
+                activity={
+                  isOpeningConversation
+                    ? "Opening saved conversation…"
+                    : activeSavedRun && !isSubmissionInProgress
+                      ? "An earlier generation is still active. Refresh its status or wait for recovery."
+                      : activity
+                }
+                trackingEnabled={isTrackingEnabled && !isConversationPrivate}
+                error={error}
+                retryAvailableAt={retryAvailableAt}
+                onRetry={error && retryInput ? retry : undefined}
+                currentId={routeId}
+                historyRefresh={historyRefresh}
+                onOpenConversation={(id) => navigate(`/conversations/${id}`)}
+                olderCursor={olderCursor}
+                loadingOlder={isLoadingOlderMessages}
+                onLoadOlder={() => void olderMessages()}
+                onRefreshConversation={
+                  routeId && !isSubmissionInProgress
+                    ? () => void refreshSavedConversation()
+                    : undefined
+                }
               />
-            )}
-            <ChatPanel
-              messages={messages}
-              onSend={(content) => void sendMessage(content)}
-              onReset={() => navigate("/")}
-              isLoading={
-                isSubmissionInProgress ||
-                isOpeningConversation ||
-                !!activeSavedRun ||
-                !isConversationStateConfirmed
-              }
-              progress={progress}
-              activity={
-                isOpeningConversation
-                  ? "Opening saved conversation…"
-                  : activeSavedRun && !isSubmissionInProgress
-                    ? "An earlier generation is still active. Refresh its status or wait for recovery."
-                    : activity
-              }
-              trackingEnabled={isTrackingEnabled && !isConversationPrivate}
-              error={error}
-              retryAvailableAt={retryAvailableAt}
-              onRetry={error && retryInput ? retry : undefined}
-              currentId={routeId}
-              historyRefresh={historyRefresh}
-              onOpenConversation={(id) => navigate(`/conversations/${id}`)}
-              olderCursor={olderCursor}
-              loadingOlder={isLoadingOlderMessages}
-              onLoadOlder={() => void olderMessages()}
-              onRefreshConversation={
-                routeId && !isSubmissionInProgress
-                  ? () => void refreshSavedConversation()
-                  : undefined
-              }
-            />
+            </div>
           </div>
         </>
       )}

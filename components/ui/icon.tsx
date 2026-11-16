@@ -10,6 +10,8 @@ const paths = {
   copy: "M9 9h12v12H9zM15 9V3H3v12h6",
   canvas: "M4 4h16v16H4zM4 8h16M8 8v12",
   reset: "M3 10a9 9 0 1 1 2 8M3 4v6h6",
+  menu: "M4 6h16M4 12h16M4 18h16",
+  close: "M6 6l12 12M6 18 18 6",
   chat: "M4 4h16v13H9l-5 4V4Z",
 } satisfies Record<string, string>;
 

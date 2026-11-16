@@ -33,7 +33,7 @@ export function SvgCanvas({
       aria-labelledby="canvas-title"
       className="flex min-h-0 min-w-0 flex-col"
     >
-      <div className="flex min-h-[65px] shrink-0 flex-wrap items-center justify-between gap-4 border-b border-stone-200 bg-white px-5 py-3 sm:px-7">
+      <div className="canvas-toolbar flex min-h-[65px] shrink-0 flex-wrap items-center justify-between gap-4 border-b border-stone-200 bg-white px-5 py-3 sm:px-7">
         <div className="flex items-center gap-3">
           <h2 id="canvas-title" className="text-sm font-medium">
             Canvas
@@ -82,7 +82,7 @@ export function SvgCanvas({
         isSample={isSample}
         activity={activity}
       />
-      <footer className="flex min-h-[61px] shrink-0 items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 sm:px-7">
+      <footer className="canvas-footer flex min-h-[61px] shrink-0 items-center justify-between gap-3 border-t border-stone-200 bg-white px-5 sm:px-7">
         <div className="min-w-0">
           <p className="truncate text-xs text-stone-600">{document.name}</p>
           <p className="mt-1 text-[10px] text-stone-400">
@@ -131,14 +131,14 @@ function CanvasSurface({
   return (
     <div
       aria-busy={isLoading}
-      className="canvas-grid relative flex min-h-[430px] flex-1 flex-col items-center justify-center overflow-hidden p-6 sm:p-12 lg:min-h-0"
+      className="canvas-surface canvas-grid relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden p-3 sm:p-6 xl:p-12"
     >
       {isLoading && (
         <div
           role="status"
-          className="absolute top-4 z-10 flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-4 py-2 text-xs text-stone-600 shadow-sm"
+          className="absolute top-4 z-10 max-w-[calc(100%-2rem)] flex items-center gap-2 rounded-lg border border-stone-200 bg-white/95 px-4 py-2 text-xs text-stone-600 shadow-sm"
         >
-          <span className="h-3 w-3 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700" />
+          <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-stone-300 border-t-stone-700" />
           {activity}
         </div>
       )}
@@ -150,10 +150,10 @@ function CanvasSurface({
       )}
       {view === "preview" ? (
         <>
-          <div className="absolute top-6 left-6 text-[10px] uppercase tracking-[0.15em] text-stone-400">
+          <div className="canvas-artboard absolute top-6 left-6 text-[10px] uppercase tracking-[0.15em] text-stone-400">
             Artboard 01
           </div>
-          <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-auto py-8">
+          <div className="canvas-image-frame flex min-h-0 w-full flex-1 items-center justify-center overflow-auto py-4">
             {/* SVG is rendered as an image, never injected into the page DOM. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -168,10 +168,10 @@ function CanvasSurface({
               }}
             />
           </div>
-          <p className="mt-3 text-xs text-stone-500">
+          <p className="canvas-caption hidden sm:block mt-3 text-xs text-stone-500">
             An idea, brought into view.
           </p>
-          <p className="mt-2 text-[11px] text-stone-400">
+          <p className="canvas-caption hidden sm:block mt-2 text-[11px] text-stone-400">
             {isLoading
               ? "Your next artwork is on its way"
               : isSample
@@ -180,17 +180,17 @@ function CanvasSurface({
           </p>
         </>
       ) : (
-        <div className="w-full overflow-hidden rounded-xl border border-stone-200 bg-white">
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-stone-200 bg-white">
           <CopySvgSource source={document.source} disabled={isLoading} />
           <pre
             aria-label="SVG source"
-            className="max-h-[60vh] w-full overflow-auto p-6 text-xs leading-7 text-stone-600"
+            className="min-h-0 flex-1 w-full overflow-auto p-6 text-xs leading-7 text-stone-600"
           >
             <code>{document.source}</code>
           </pre>
         </div>
       )}
-      <div className="mt-7 flex items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-xs">
+      <div className="canvas-zoom mt-3 shrink-0 flex items-center gap-1 rounded-xl border border-stone-200 bg-white p-1 shadow-xs">
         <Button
           variant="ghost"
           onClick={() => setZoom((value) => value / 1.25)}

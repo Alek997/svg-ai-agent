@@ -1,5 +1,7 @@
+import { WorkspaceViewport } from "../../../components/workspace/workspace-viewport";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { WorkspaceHeaderContent } from "../../../components/workspace/workspace-header-content";
 import { SvgWorkspace } from "../../../components/workspace/svg-workspace";
 import "../../browser/navigation";
 
@@ -11,12 +13,29 @@ const generationLabel =
 
 createRoot(root).render(
   <StrictMode>
-    <main className="flex h-dvh flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-stone-200 bg-white px-5 py-3 text-xs text-stone-500">
-        SVG Studio · isolated E2E fixture · {generationLabel} · in-memory saved
-        conversations
-      </header>
-      <SvgWorkspace />
-    </main>
+    <WorkspaceViewport>
+      <WorkspaceHeaderContent
+        showCollections={
+          !new URLSearchParams(location.search).has("basic-navigation")
+        }
+        showEvalRuns={
+          !new URLSearchParams(location.search).has("basic-navigation")
+        }
+        modelLabel={generationLabel}
+        accountMenu={
+          <button
+            type="button"
+            aria-label="Open user menu"
+            className="size-8 rounded-full bg-stone-100"
+          >
+            A
+          </button>
+        }
+      />
+      <SvgWorkspace
+        ragEnabled={new URLSearchParams(location.search).has("collections")}
+        trackingEnabled
+      />
+    </WorkspaceViewport>
   </StrictMode>,
 );

@@ -7,14 +7,14 @@ export function WorkspaceSkeleton() {
       role="status"
       aria-label="Loading saved conversation"
       aria-busy="true"
-      className="grid min-h-0 flex-1 grid-cols-1 overflow-auto lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px]"
+      className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_400px]"
     >
       <span className="sr-only">
         Loading your saved artwork and conversation…
       </span>
       <section
         aria-label="Loading artwork"
-        className="flex min-h-[556px] flex-col lg:min-h-0 border-r border-stone-200"
+        className="hidden min-h-0 flex-col lg:flex border-r border-stone-200"
       >
         <div
           aria-hidden="true"
@@ -41,7 +41,7 @@ export function WorkspaceSkeleton() {
       </section>
       <section
         aria-label="Loading messages"
-        className="flex min-h-[500px] flex-col overflow-hidden bg-white lg:min-h-0"
+        className="flex min-h-0 flex-col overflow-hidden bg-white lg:min-h-0"
       >
         <div
           aria-hidden="true"
@@ -80,12 +80,12 @@ export function EmptySavedCanvas({
   return (
     <section
       aria-label="Canvas"
-      className="canvas-grid flex min-h-[556px] flex-col lg:min-h-0 items-center justify-center border-r border-stone-200 p-8 text-center"
+      className="canvas-grid flex min-h-0 flex-col items-center justify-center border-r border-stone-200 p-8 text-center"
     >
       {isLoading && (
         <div
           aria-hidden="true"
-          className={`${pulse} mb-6 aspect-square w-64 max-w-full rounded-2xl`}
+          className={`${pulse} mb-6 min-h-0 max-h-[40%] aspect-square w-64 max-w-full rounded-2xl`}
         />
       )}
       <h2

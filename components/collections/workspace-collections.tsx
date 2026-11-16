@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { CollectionSummary } from "@/lib/collections/contracts";
 import { useCollectionList } from "./use-collection-list";
 import { collectionRequest } from "./client";
@@ -22,54 +22,75 @@ export function WorkspaceCollections({
   disabled: boolean;
 }) {
   const { collections, error } = useCollectionList();
+  const [expanded, setExpanded] = useState(false);
+  const controlsId = useId();
   return (
-    <div className="shrink-0 space-y-2 border-b border-stone-200 bg-white px-6 py-3 text-xs text-stone-600">
-      {!conversationId ? (
-        <label>
-          Reference collection{" "}
-          <select
-            aria-label="Reference collection"
-            className="ml-3 rounded-lg border border-stone-200 px-3 py-2"
-            value={selected}
+    <div className="workspace-collections min-h-0 max-h-[30%] shrink-0 overflow-y-auto border-b border-stone-200 bg-white text-xs text-stone-600 lg:max-h-none">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={controlsId}
+        onClick={() => setExpanded((value) => !value)}
+        className="min-h-10 w-full px-3 text-left font-medium lg:hidden"
+      >
+        {privateConversation
+          ? "Private conversation · Collections"
+          : "Reference collections"}
+        <span className="float-right" aria-hidden="true">
+          {expanded ? "−" : "+"}
+        </span>
+      </button>
+      <div
+        id={controlsId}
+        className={`${expanded ? "block" : "hidden"} space-y-2 px-3 py-3 lg:block lg:px-6`}
+      >
+        {!conversationId ? (
+          <label>
+            Reference collection{" "}
+            <select
+              aria-label="Reference collection"
+              className="block w-full max-w-full mt-2 text-base lg:text-xs sm:ml-3 sm:inline-block sm:w-auto sm:mt-0 rounded-lg border border-stone-200 px-3 py-2"
+              value={selected}
+              disabled={disabled}
+              onChange={(e) => onSelect(e.target.value)}
+            >
+              <option value="">None</option>
+              {collections.map((collection) => (
+                <option
+                  key={collection.id}
+                  value={collection.id}
+                  disabled={!collection.ready}
+                >
+                  {collection.name} · {collection.ready} ready
+                </option>
+              ))}
+            </select>
+            <span className="ml-3">
+              Selection is fixed when the conversation starts. Using a
+              collection makes all its artwork private.
+            </span>
+          </label>
+        ) : (
+          <p>
+            {privateConversation
+              ? "Private conversation · public links are disabled."
+              : "Reference selection is fixed for this conversation."}
+          </p>
+        )}
+        {conversationId && hasArtwork && (
+          <AddToCollection
+            collections={collections}
+            conversationId={conversationId}
             disabled={disabled}
-            onChange={(e) => onSelect(e.target.value)}
-          >
-            <option value="">None</option>
-            {collections.map((collection) => (
-              <option
-                key={collection.id}
-                value={collection.id}
-                disabled={!collection.ready}
-              >
-                {collection.name} · {collection.ready} ready
-              </option>
-            ))}
-          </select>
-          <span className="ml-3">
-            Selection is fixed when the conversation starts. Using a collection
-            makes all its artwork private.
-          </span>
-        </label>
-      ) : (
-        <p>
-          {privateConversation
-            ? "Private conversation · public links are disabled."
-            : "Reference selection is fixed for this conversation."}
-        </p>
-      )}
-      {conversationId && hasArtwork && (
-        <AddToCollection
-          collections={collections}
-          conversationId={conversationId}
-          disabled={disabled}
-          onAdded={onAdded}
-        />
-      )}
-      {error && (
-        <p role="alert" className="text-red-700">
-          {error}
-        </p>
-      )}
+            onAdded={onAdded}
+          />
+        )}
+        {error && (
+          <p role="alert" className="text-red-700">
+            {error}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -108,7 +129,7 @@ function AddToCollection({
       <div className="flex flex-wrap items-center gap-3">
         <select
           aria-label="Add artwork to collection"
-          className="rounded-lg border border-stone-200 px-3 py-2"
+          className="max-w-full text-base lg:text-xs rounded-lg border border-stone-200 px-3 py-2"
           value={target}
           disabled={disabled || busy}
           onChange={(e) => setTarget(e.target.value)}

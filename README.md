@@ -10,6 +10,8 @@ For a compact code walkthrough and current gaps, see the
 
 ## Features
 
+- Mobile navigation menu and Conversation/Canvas switching with a keyboard-aware
+  composer; desktop displays both panels side by side.
 - Progressive SVG previews, source view, zoom, copy and download.
 - Saved conversations and an SVG gallery, with continued editing after reload.
 - A bounded drawing agent that reads existing artwork, validates proposals and

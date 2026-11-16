@@ -1,3 +1,4 @@
+import { WorkspaceViewport } from "@/components/workspace/workspace-viewport";
 import { auth } from "@clerk/nextjs/server";
 import { notFound } from "next/navigation";
 import { WorkspaceHeader } from "@/components/workspace/workspace-header";
@@ -15,13 +16,13 @@ export default async function Conversation({
   const { id } = await params;
   if (!conversationIdSchema.safeParse(id).success) notFound();
   return (
-    <main className="flex h-dvh flex-col overflow-hidden">
+    <WorkspaceViewport>
       <WorkspaceHeader />
       <SvgWorkspace
         initialConversationId={id}
         ragEnabled={await ragEnabled(userId)}
         trackingEnabled={trackingEnabled()}
       />
-    </main>
+    </WorkspaceViewport>
   );
 }

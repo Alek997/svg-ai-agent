@@ -25,6 +25,7 @@ type ChatPanelProps = {
   activity: string;
   error: string | null;
   trackingEnabled?: boolean;
+  isMobileViewActive?: boolean;
   onRetry?: () => void;
   retryAvailableAt?: number;
 };
@@ -47,6 +48,7 @@ export function ChatPanel({
   onRetry,
   retryAvailableAt = 0,
   trackingEnabled = false,
+  isMobileViewActive = true,
 }: ChatPanelProps) {
   const history = useRef<HTMLDivElement>(null);
   const lastMessages = useRef<Message[]>([]);
@@ -65,13 +67,13 @@ export function ChatPanel({
       top: history.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, isLoading, error]);
+  }, [messages, isLoading, error, isMobileViewActive]);
   return (
     <aside
       aria-labelledby="chat-title"
-      className="flex min-h-0 flex-col border-t border-stone-200 bg-white lg:border-t-0 lg:border-l"
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden border-t border-stone-200 bg-white lg:border-t-0 lg:border-l"
     >
-      <div className="flex h-[65px] shrink-0 items-center justify-between border-b border-stone-200 px-5">
+      <div className="flex h-12 lg:h-[65px] shrink-0 items-center justify-between border-b border-stone-200 px-5">
         <h2
           id="chat-title"
           className="flex items-center gap-2 text-sm font-medium"
@@ -89,40 +91,41 @@ export function ChatPanel({
           New icon
         </Button>
       </div>
-      <p className="border-b border-stone-200 bg-stone-50 px-5 py-3 text-[11px] leading-5 text-stone-600">
-        Conversations and completed artwork are saved to your account. Older
-        messages stay in history, but edits use recent context and the latest
-        SVG.
-        {onRefreshConversation && (
-          <button
-            type="button"
-            onClick={onRefreshConversation}
-            className="mt-1 block underline"
-          >
-            Refresh saved conversation
-          </button>
-        )}
-        {trackingEnabled && (
-          <span className="mt-2 block">
-            Prompts, generated artwork, and feedback are recorded to help
-            improve SVG Studio. Avoid sharing sensitive information.
-          </span>
-        )}
-      </p>
-      {onOpenConversation && (
-        <ConversationHistory
-          currentId={currentId}
-          refreshKey={historyRefresh}
-          onOpen={onOpenConversation}
-        />
-      )}
       <div
         ref={history}
         role="log"
         aria-label="Conversation history"
         aria-live="polite"
-        className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3 sm:space-y-6 sm:p-5"
       >
+        <p className="border-b border-stone-200 bg-stone-50 px-5 py-3 text-[11px] leading-5 text-stone-600">
+          Conversations and completed artwork are saved to your account. Older
+          messages stay in history, but edits use recent context and the latest
+          SVG.
+          {onRefreshConversation && (
+            <button
+              type="button"
+              onClick={onRefreshConversation}
+              className="mt-1 block underline"
+            >
+              Refresh saved conversation
+            </button>
+          )}
+          {trackingEnabled && (
+            <span className="mt-2 block">
+              Prompts, generated artwork, and feedback are recorded to help
+              improve SVG Studio. Avoid sharing sensitive information.
+            </span>
+          )}
+        </p>
+        {onOpenConversation && (
+          <ConversationHistory
+            currentId={currentId}
+            refreshKey={historyRefresh}
+            onOpen={onOpenConversation}
+          />
+        )}
+
         {!currentId && (
           <p className="text-center text-[10px] uppercase tracking-[0.15em] text-stone-400">
             A little inspiration goes a long way
@@ -171,23 +174,23 @@ export function ChatPanel({
               ))}
             </div>
           )}
+        {error && (
+          <div
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+          >
+            <p>{error}</p>
+            {onRetry && (
+              <RetryGeneration
+                key={retryAvailableAt}
+                availableAt={retryAvailableAt}
+                disabled={isLoading}
+                onRetry={onRetry}
+              />
+            )}
+          </div>
+        )}
       </div>
-      {error && (
-        <div
-          role="alert"
-          className="mx-5 mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
-        >
-          <p>{error}</p>
-          {onRetry && (
-            <RetryGeneration
-              key={retryAvailableAt}
-              availableAt={retryAvailableAt}
-              disabled={isLoading}
-              onRetry={onRetry}
-            />
-          )}
-        </div>
-      )}
       <ChatComposer onSend={onSend} isLoading={isLoading} />
     </aside>
   );

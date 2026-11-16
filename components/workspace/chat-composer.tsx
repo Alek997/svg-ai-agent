@@ -25,7 +25,7 @@ export function ChatComposer({
         event.preventDefault();
         submit();
       }}
-      className="border-t border-stone-200 p-5"
+      className="chat-composer shrink-0 border-t border-stone-200 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-5"
     >
       <div className="rounded-xl border border-stone-200 bg-white p-3 shadow-xs focus-within:border-stone-400">
         <label htmlFor="prompt" className="sr-only">
@@ -37,9 +37,9 @@ export function ChatComposer({
           onChange={(event) => setDraft(event.target.value)}
           maxLength={MAX_PROMPT_LENGTH}
           disabled={isLoading}
-          rows={3}
+          rows={2}
           placeholder="Describe what you want to create…"
-          className="w-full resize-none bg-transparent text-[13px] leading-6 outline-none placeholder:text-stone-400"
+          className="w-full resize-none bg-transparent text-base leading-6 lg:text-[13px] outline-none placeholder:text-stone-400"
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&
@@ -66,7 +66,7 @@ export function ChatComposer({
           </Button>
         </div>
       </div>
-      <p className="mt-3 text-center text-[10px] text-stone-400">
+      <p className="mt-2 text-center text-[10px] text-stone-400">
         Family-friendly artwork only · Shift + Enter for a new line
       </p>
     </form>

@@ -28,7 +28,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run test:e2e:fixture",
+    command:
+      "node --conditions=react-server --import tsx tests/e2e/fixture/server.mts",
     url: "http://127.0.0.1:4321",
     env: { E2E_LIVE_MODE: "0" },
     reuseExistingServer: false,

@@ -48,3 +48,70 @@ a {
     scroll-behavior: auto !important;
   }
 }
+
+.workspace-viewport {
+  position: relative;
+  width: 100%;
+  height: var(--workspace-height, 100dvh);
+  container: workspace / size;
+  padding-top: env(safe-area-inset-top);
+}
+
+@media (width < 64rem) {
+  .workspace-viewport {
+    top: var(--workspace-top, 0px);
+    padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
+}
+
+.canvas-footer {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Use the available workspace height, including when a keyboard is open. */
+@container workspace (height < 500px) {
+  .chat-composer {
+    padding: 0.5rem;
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .chat-composer textarea {
+    height: 1.5rem;
+  }
+
+  .chat-composer > p,
+  .canvas-caption,
+  .canvas-artboard {
+    display: none;
+  }
+
+  nav[aria-label="Workspace view"] {
+    padding-block: 0.25rem;
+  }
+
+  nav[aria-label="Workspace view"] button {
+    min-height: 2rem;
+  }
+
+  .canvas-toolbar,
+  .canvas-footer {
+    min-height: 3rem;
+    padding-block: 0.25rem;
+  }
+
+  .canvas-footer {
+    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  }
+
+  .canvas-surface {
+    padding: 0.5rem;
+  }
+
+  .canvas-image-frame {
+    padding-block: 0.5rem;
+  }
+
+  .canvas-zoom {
+    margin-top: 0.5rem;
+  }
+}
